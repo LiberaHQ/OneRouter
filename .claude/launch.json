@@ -2,21 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "onerouter-dev",
-      "runtimeExecutable": "python3",
+      "name": "onerouter-web",
+      "runtimeExecutable": "npm",
       "runtimeArgs": [
-        "dev.py"
+        "--prefix",
+        "web",
+        "run",
+        "dev"
       ],
-      "port": 4321
-    },
-    {
-      "name": "onerouter-site",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": [
-        "serve.py",
-        "4321"
-      ],
-      "port": 4321
+      "port": 8080
     }
   ]
 }
