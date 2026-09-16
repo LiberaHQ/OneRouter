@@ -52,6 +52,13 @@ export default function Chat({
     setHasKey(!!key);
     if (!key) { setBalance('—'); return; }
     try {
+      // Ask the gateway to sweep this account's deposit address first: a transfer that
+      // landed while nothing was watching should show up here, not stay invisible.
+      await fetch(`${api}/pay/reconcile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: '{}',
+      }).catch(() => undefined);
       const res = await fetch(`${api}/me`, { headers: { Authorization: `Bearer ${key}` } });
       if (res.ok) {
         const me = await res.json();

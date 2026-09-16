@@ -183,7 +183,12 @@ export default function Deposit({
             {Number(dep.balance_usd ?? 0).toFixed(4)}
           </b>
         </p>
-      ) : null}
+      ) : (
+        <p className="step-note">
+          Nothing has arrived at this address yet. It is watched continuously, so you can
+          close this page — the credit lands whenever the transfer does.
+        </p>
+      )}
       {dep.chain_error && <p className="step-note bad">{dep.chain_error}</p>}
 
       <details className="help">

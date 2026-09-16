@@ -8,6 +8,7 @@ const TOP = [
   ['Models', '/models'],
   ['Pricing', '/pricing'],
   ['Status', '/status'],
+  ['Dashboard', '/dashboard'],
 ] as const;
 
 const FOOTER: [string, [string, string][]][] = [
@@ -18,7 +19,8 @@ const FOOTER: [string, [string, string][]][] = [
                ['Billing', '/docs/billing'], ['Data handling', '/docs/privacy']]],
   ['Build', [['Client setup', '/docs/integrations'], ['Agent resources', '/docs/agent-resources'],
              ['Model catalog', '/models'], ['llms.txt', '/llms.txt']]],
-  ['Platform', [['Sign in', '/signin'], ['Add credit', '/pay'], ['Pricing', '/pricing'],
+  ['Platform', [['Sign in', '/signin'], ['Dashboard', '/dashboard'],
+                ['Add credit', '/pay'], ['Pricing', '/pricing'],
                 ['Status', '/status'], ['Changelog', '/changelog'], ['Support', '/support']]],
 ];
 

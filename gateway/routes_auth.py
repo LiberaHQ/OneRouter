@@ -17,7 +17,7 @@ import secrets
 import time
 import urllib.parse
 
-from gateway import arc, auth, qr
+from gateway import arc, auth, core, qr
 
 SESSION_PREFIX = "or-sess-"
 
@@ -63,6 +63,10 @@ def handle_get(h, path: str, query: dict) -> bool:
         methods = auth.available()
         methods["wallet"]["chains"] = ["arc", "solana"]
         h.reply(200, {"methods": methods, "origins": auth.ORIGINS})
+        return True
+
+    if path == "/v1/usage":
+        _usage(h)
         return True
 
     if path == "/v1/auth/session":
@@ -131,6 +135,10 @@ def handle_post(h, path: str, body: dict) -> bool:
 
     if path == "/v1/pay/deposit":
         _open_deposit(h, body)
+        return True
+
+    if path == "/v1/pay/reconcile":
+        _reconcile_route(h)
         return True
 
     return False
@@ -370,6 +378,148 @@ def _open_deposit(h, body: dict) -> None:
     h.reply(201, deposit)
 
 
+def _usage(h) -> None:
+    """Everything the dashboard shows, aggregated from this account's receipts.
+
+    Receipts are the record of what actually happened — one per answered request,
+    written at settle time — so the figures here are the same ones each response
+    carried in its `x-onerouter-*` headers rather than a separate tally that could
+    drift from them.
+    """
+    acct, err = principal(h)
+    if err:
+        h.fail_msg(err, "sign in or send a key to read usage")
+        return
+
+    mine = [r for r in h.store.state.get("receipts", [])
+            if r.get("account") == acct["id"]]
+    mine.sort(key=lambda r: r.get("created", 0))
+
+    by_model: dict[str, dict] = {}
+    by_day: dict[str, dict] = {}
+    totals = {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0,
+              "cost_usd": 0.0, "free_requests": 0}
+
+    for r in mine:
+        cost = float(r.get("cost_usd") or 0)
+        prompt = int(r.get("prompt_tokens") or 0)
+        completion = int(r.get("completion_tokens") or 0)
+
+        totals["requests"] += 1
+        totals["prompt_tokens"] += prompt
+        totals["completion_tokens"] += completion
+        totals["cost_usd"] += cost
+        if r.get("free"):
+            totals["free_requests"] += 1
+
+        model = by_model.setdefault(r.get("model", "unknown"), {
+            "model": r.get("model", "unknown"), "requests": 0,
+            "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": 0.0,
+            "ttft_ms_total": 0,
+        })
+        model["requests"] += 1
+        model["prompt_tokens"] += prompt
+        model["completion_tokens"] += completion
+        model["cost_usd"] += cost
+        model["ttft_ms_total"] += int(r.get("ttft_ms") or 0)
+
+        day = time.strftime("%Y-%m-%d", time.gmtime(r.get("created", 0)))
+        bucket = by_day.setdefault(day, {"day": day, "requests": 0, "cost_usd": 0.0,
+                                         "tokens": 0})
+        bucket["requests"] += 1
+        bucket["cost_usd"] += cost
+        bucket["tokens"] += prompt + completion
+
+    models = sorted(by_model.values(), key=lambda m: -m["cost_usd"])
+    for m in models:
+        m["cost_usd"] = round(m["cost_usd"], 8)
+        # Mean time to first token, which is the latency figure that is felt.
+        m["ttft_ms_avg"] = round(m.pop("ttft_ms_total") / m["requests"]) if m["requests"] else 0
+
+    quota = h.store.open_tier(acct)
+    h.reply(200, {
+        "account": acct["id"],
+        "created": acct["created"],
+        "identities": acct.get("identities", []),
+        "balance_usd": round(acct["balance_usd"], 6),
+        "spent_usd": round(acct["spent_usd"], 6),
+        "arc_address": h.store.arc_address(acct),
+        "arc_chain_id": arc.CHAIN_ID,
+        "totals": {**totals, "cost_usd": round(totals["cost_usd"], 8),
+                   "total_tokens": totals["prompt_tokens"] + totals["completion_tokens"]},
+        "by_model": models,
+        "by_day": sorted(by_day.values(), key=lambda d: d["day"]),
+        # Newest first: a dashboard reads downward from the most recent request.
+        "recent": list(reversed(mine[-40:])),
+        "open_tier": {
+            "requests_remaining": max(0, core.FREE_REQUESTS_PER_DAY - quota["requests"]),
+            "requests_limit": core.FREE_REQUESTS_PER_DAY,
+            "tokens_remaining": max(0, core.FREE_TOKENS_PER_DAY - quota["tokens"]),
+            "tokens_limit": core.FREE_TOKENS_PER_DAY,
+        },
+        # The receipt log is capped, so a long-lived key's early history rolls off.
+        "history_capped_at": 500,
+        "receipts_held": len(mine),
+    })
+
+
+def reconcile(store, only_account: str | None = None) -> list[dict]:
+    """Credits anything sitting on a derived address, whether or not a page is open.
+
+    Crediting used to happen only when a browser polled the deposit endpoint, which
+    meant money that landed after someone closed the tab stayed uncredited. This walks
+    the addresses instead, so the balance on chain and the balance on the key agree
+    regardless of who is watching.
+    """
+    ready, why = arc.configured()
+    if not ready:
+        raise arc.ChainError(why)
+
+    applied = []
+    accounts = store.state.get("accounts", {})
+    for acct_id, acct in list(accounts.items()):
+        if only_account and acct_id != only_account:
+            continue
+        address = acct.get("arc_address")
+        if not address or acct.get("revoked"):
+            continue
+        try:
+            balance = arc.balance_of(address)
+        except arc.ChainError:
+            continue                      # a blip on one address must not stop the rest
+        credited = int(acct.get("arc_credited_native", 0))
+        owed = max(0, balance - credited)
+        if not owed:
+            continue
+        acct["arc_credited_native"] = credited + owed
+        store.credit(acct, arc.native_usd(owed))
+        applied.append({
+            "account": acct_id, "address": address,
+            "credited_usd": arc.native_usd(owed),
+            "balance_usd": round(acct["balance_usd"], 6),
+        })
+    store.persist()
+    return applied
+
+
+def _reconcile_route(h) -> None:
+    acct, err = principal(h)
+    if err:
+        h.fail_msg(err, "sign in or send a key to reconcile a deposit")
+        return
+    try:
+        applied = reconcile(h.store, acct["id"])
+    except arc.ChainError as err_:
+        h.fail_msg("invalid_request", f"could not reach the chain: {err_}")
+        return
+    h.reply(200, {
+        "account": acct["id"],
+        "arc_address": h.store.arc_address(acct),
+        "credited": applied,
+        "balance_usd": round(acct["balance_usd"], 6),
+    })
+
+
 def _deposit_status(h, reference: str) -> None:
     acct, err = principal(h)
     if err:
@@ -380,14 +530,14 @@ def _deposit_status(h, reference: str) -> None:
         h.fail_msg("invalid_request", "no such deposit")
         return
     try:
-        deposit, new_units = arc.check(deposit)
+        deposit, owed_native = arc.check(deposit)
     except arc.ChainError as err:
         h.reply(200, {**deposit, "chain_error": str(err)})
         return
 
-    # Credit what actually arrived, once per transaction. arc.check only reports a
-    # transfer once it is buried, and never reports the same hash twice.
-    if new_units:
-        h.store.credit(acct, arc.usd(new_units))
+    # Credit the difference between the address balance and what has already been
+    # credited, so running this twice cannot pay twice.
+    if owed_native:
+        h.store.credit(acct, arc.native_usd(owed_native))
     h.store.persist()
     h.reply(200, {**deposit, "balance_usd": round(acct["balance_usd"], 6)})

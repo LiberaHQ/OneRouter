@@ -42,6 +42,10 @@ CHAIN_ID = int(os.environ.get("ONEROUTER_ARC_CHAIN_ID", "5042"))
 USDC = os.environ.get("ONEROUTER_ARC_USDC",
                       "0x3600000000000000000000000000000000000000")
 DECIMALS = int(os.environ.get("ONEROUTER_ARC_DECIMALS", "6"))
+# The native balance is in EVM units (18 dp); the token interface reports USDC
+# units (6 dp). Crediting reads the balance, so it works in the 18-dp scale and
+# converts once, at the edge.
+NATIVE_DECIMALS = int(os.environ.get("ONEROUTER_ARC_NATIVE_DECIMALS", "18"))
 CONFIRMATIONS = int(os.environ.get("ONEROUTER_ARC_CONFIRMATIONS", "2"))
 EXPLORER = os.environ.get("ONEROUTER_ARC_EXPLORER", "https://explorer.arc.io").rstrip("/")
 NETWORK = os.environ.get("ONEROUTER_ARC_NETWORK", "Arc")
@@ -49,7 +53,7 @@ ENABLED = os.environ.get("ONEROUTER_ARC_ENABLE", "") == "1"
 
 MIN_USD = 0.50
 MAX_SCAN = 20_000        # blocks to catch up per poll, walked in chunks
-LOG_WINDOW = 500         # starting chunk size; halved on a cap error
+LOG_WINDOW = 9000        # the endpoint refuses ranges of 10000 or more
 SEEN_LIMIT = 25          # transfers kept for display
 DEPOSIT_TTL = 24 * 3600  # how long a deposit intent stays "waiting" in the UI
 # A live chain id means real funds. Anything else is treated as a test network.
@@ -115,7 +119,22 @@ def units(usd: float) -> int:
 
 
 def usd(raw: int) -> float:
+    """Token units (6 dp) -> dollars."""
     return raw / 10 ** DECIMALS
+
+
+def native_usd(raw: int) -> float:
+    """A native balance or tx value (18 dp) -> dollars."""
+    return raw / 10 ** NATIVE_DECIMALS
+
+
+def native_units(usd_amount: float) -> int:
+    return int(round(usd_amount * 10 ** NATIVE_DECIMALS))
+
+
+def balance_of(address: str) -> int:
+    """The address's USDC balance in native units. One call, no range or result cap."""
+    return int(rpc("eth_getBalance", [address, "latest"]), 16)
 
 
 def head_block() -> int:
@@ -206,71 +225,56 @@ def open_deposit(account_id: str, address: str, usd_wanted: float) -> dict:
 
 
 def check(deposit: dict) -> tuple[dict, int]:
-    """Scans for new transfers and returns (deposit, newly_credited_units).
+    """Credits whatever has arrived. Returns (deposit, newly_credited_native_units).
 
-    Double-crediting is prevented by a high-water mark, not by a list of hashes. A
-    list has to be capped or it grows without bound, and a capped list silently
-    forgets — which is how the same transfer gets paid twice. Instead:
+    Crediting reads the address balance rather than scanning `Transfer` logs. Logs
+    looked like the tidier mechanism — they carry a tx hash and a block number — but
+    on Arc they are not emitted for every arrival: a real 1 USDC deposit showed up in
+    `eth_getBalance` with no matching log anywhere in 120k blocks, so a log-based
+    watcher could never have seen it. The balance is what the chain actually owes.
 
-        credited_through   the highest block fully credited
-        credited_at_edge   hashes credited *in* that block
+    It is also one RPC call with no range or result cap, where the log walk needed up
+    to forty and rate-limited itself into never catching up.
 
-    Anything below the mark is known-credited; anything in the mark's own block is
-    checked against the edge set, which only ever holds one block's worth. The test
-    for this rewinds the cursor and re-scans, and must credit nothing.
+    A per-account address makes the arithmetic safe: everything that arrives belongs
+    to this account, so `balance - already_credited` is the amount owed, and it cannot
+    double-credit however often it runs.
     """
     ready, why = configured()
     if not ready:
         raise ChainError(why)
 
-    head = head_block()
-    start = deposit.get("cursor", deposit["from_block"])
-    stop = min(head, start + MAX_SCAN)
-    if stop < start:
-        return deposit, 0
+    balance = balance_of(deposit["address"])
+    credited = int(deposit.get("credited_native", 0))
+    owed = max(0, balance - credited)
 
-    # One scan per call, reused for both crediting and the pending report.
-    transfers = incoming(deposit["address"], start, stop)
-    mark = deposit.get("credited_through", -1)
-    edge = set(deposit.get("credited_at_edge", []))
-
-    credited, pending = 0, []
-    for entry in transfers:
-        block = entry["block"]
-        if block < mark or (block == mark and entry["tx"] in edge):
-            continue                      # already paid
-        if head - block + 1 < CONFIRMATIONS:
-            pending.append(entry)
-            continue                      # not buried yet; next pass will take it
-        entry["confirmations"] = head - block + 1
-        if EXPLORER:
-            entry["explorer_url"] = f"{EXPLORER}/tx/{entry['tx']}"
-        deposit.setdefault("seen", []).append(entry)
-        deposit["received_units"] = deposit.get("received_units", 0) + entry["units"]
-        credited += entry["units"]
-        if block > mark:
-            mark, edge = block, {entry["tx"]}
-        else:
-            edge.add(entry["tx"])
-
-    deposit["credited_through"] = mark
-    deposit["credited_at_edge"] = sorted(edge)
-    deposit["seen"] = deposit.get("seen", [])[-SEEN_LIMIT:]
-
-    # Hold back the confirmation depth so a shallow transfer is re-seen, and never
-    # let the cursor run past the head.
-    deposit["cursor"] = max(start, min(stop - CONFIRMATIONS + 1, head))
-
-    if deposit.get("received_units", 0) > 0:
+    deposit["balance_native"] = balance
+    deposit["balance_usd"] = native_usd(balance)
+    if owed:
+        deposit["credited_native"] = credited + owed
+        deposit["received_native"] = int(deposit.get("received_native", 0)) + owed
+        deposit["received_usd"] = native_usd(deposit["received_native"])
         deposit["status"] = "credited"
-    elif pending:
-        deposit["status"] = "pending"
-        deposit["pending_units"] = sum(e["units"] for e in pending)
-        deposit["confirmations_seen"] = head - pending[-1]["block"] + 1
+        deposit["credited_at"] = int(time.time())
+    elif deposit.get("received_native"):
+        deposit["status"] = "credited"
+        deposit["received_usd"] = native_usd(deposit["received_native"])
     elif deposit["expires"] < time.time():
         deposit["status"] = "expired"
     else:
         deposit["status"] = "waiting"
-    deposit["received_usd"] = usd(deposit.get("received_units", 0))
-    deposit["head"] = head
-    return deposit, credited
+
+    # Transfer logs are still read, but only to show a tx hash and an explorer link.
+    # A failure here must never stop a credit, so it is contained.
+    if owed and EXPLORER:
+        try:
+            head = head_block()
+            recent = incoming(deposit["address"], max(head - LOG_WINDOW, 0), head)
+            for entry in recent[-SEEN_LIMIT:]:
+                entry["explorer_url"] = f"{EXPLORER}/tx/{entry['tx']}"
+            if recent:
+                deposit["seen"] = recent[-SEEN_LIMIT:]
+        except ChainError:
+            pass
+
+    return deposit, owed

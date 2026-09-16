@@ -594,6 +594,21 @@ def main() -> None:
     print(f"  engine:  {engine.describe()}")
     print(f"  catalog: {len(core.catalog())} models")
     print(f"  state:   {core.STATE}")
+    # Money can land while this process is not running. Reconcile once at startup so
+    # the key balances agree with the chain before anyone asks.
+    try:
+        from gateway import arc as _arc
+        from gateway import routes_auth as _routes
+        if _arc.configured()[0]:
+            found = _routes.reconcile(STORE)
+            if found:
+                total = sum(f["credited_usd"] for f in found)
+                print(f"  arc:     credited ${total:.6f} across "
+                      f"{len(found)} address(es) on startup")
+            else:
+                print("  arc:     deposits reconciled, nothing outstanding")
+    except Exception as err:  # noqa: BLE001 - startup must never be blocked by the chain
+        print(f"  arc:     reconcile skipped ({err})")
     if LOADED_ENV:
         print(f"  .env:    loaded {len(LOADED_ENV)} setting(s): "
               f"{', '.join(sorted(LOADED_ENV))}")

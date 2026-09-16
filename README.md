@@ -124,7 +124,7 @@ still reads: tabs show their first pane, tables show every row, nav works.
 ```bash
 python3 site/build.py && python3 site/check.py
 python3 gateway/selftest.py
-python3 gateway/test_deposits.py
+python3 gateway/test_credit_balance.py
 ```
 
 `site/check.py` audits every internal link, then guards the failure that does not
@@ -286,12 +286,23 @@ place for it once real money is involved.
 after `ONEROUTER_ARC_CONFIRMATIONS` blocks. Two details that took a rewrite to get
 right, both covered by `gateway/test_deposits.py`:
 
-- **No double-crediting.** Guarded by a high-water mark (`credited_through` plus the
-  hashes in that one block), not a list of seen hashes. A list has to be capped, and a
-  capped list silently forgets — an earlier version paid 400 of 900 transfers twice.
-- **The result cap, not the range.** `eth_getLogs` caps by result count, so a busy
-  address trips it over a window a quiet one handles. The range is walked in chunks and
-  any chunk that trips the cap is quartered until it fits.
+- **Credit reads the balance, not the logs.** `Transfer` logs looked like the tidier
+  mechanism — they carry a tx hash and a block. But on Arc they are not emitted for
+  every arrival: a real 1 USDC deposit sat in `eth_getBalance` with no matching log
+  anywhere in 120k blocks, so a log-based watcher could never have credited it. The
+  balance is what the chain actually owes. It is also one RPC call with no range or
+  result cap, where the log walk needed up to forty per poll and rate-limited itself
+  into never catching up (`429`, and a cursor that advanced 256 blocks in an hour).
+- **No double-crediting.** A per-account address makes the arithmetic safe: everything
+  that arrives belongs to that account, so `balance - already_credited` is the amount
+  owed and it cannot pay twice however often it runs.
+- **Crediting does not depend on a browser.** `POST /v1/pay/reconcile` sweeps an
+  account's address, the gateway reconciles every address at startup, and the chat
+  sidebar reconciles before reading the balance. Money that lands after someone closes
+  the tab is still found.
+- **Two decimal scales.** A native balance and a tx `value` are 18 decimals; the token
+  interface reports 6. Confusing them is a 10^12 error, so crediting works in native
+  units and converts once, at the edge.
 
 ## Not built
 
