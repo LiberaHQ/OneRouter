@@ -39,7 +39,7 @@ def digest(secret: str) -> str:
 def _blank() -> dict:
     return {"accounts": {}, "index": {}, "receipts": [],
             # Auth: an identity is "<provider>:<subject>" and maps to one account.
-            "identities": {}, "sessions": {}, "credentials": {}, "pending": {},
+            "identities": {}, "sessions": {}, "pending": {},
             "deposits": {}, "throttle": {}}
 
 
@@ -334,27 +334,6 @@ class Store:
         with _lock:
             self.state.setdefault("throttle", {}).pop(subject, None)
             save(self.state)
-
-    # ── Passkey credentials ─────────────────────────────────────────────────
-    def save_credential(self, cred_id: str, account: str, public_key: str,
-                        sign_count: int, label: str) -> None:
-        with _lock:
-            self.state["credentials"][cred_id] = {
-                "account": account, "public_key": public_key,
-                "sign_count": sign_count, "label": label,
-                "created": int(time.time()),
-            }
-            save(self.state)
-
-    def credential(self, cred_id: str) -> dict | None:
-        return self.state["credentials"].get(cred_id or "")
-
-    def touch_credential(self, cred_id: str, sign_count: int) -> None:
-        with _lock:
-            row = self.state["credentials"].get(cred_id)
-            if row:
-                row["sign_count"] = sign_count
-                save(self.state)
 
     def keys_for(self, acct: dict) -> list[dict]:
         """What the dashboard can show about an account without exposing a secret."""

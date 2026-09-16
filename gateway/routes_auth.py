@@ -1,5 +1,7 @@
 """Sign-in and deposit routes.
 
+Two ways in: an email (code or password) and a wallet signature. Nothing else.
+
 Kept apart from `server.py` so the completions path stays readable. Each handler
 returns True once it has answered; the server falls through to its own routes when
 none of these match.
@@ -60,13 +62,7 @@ def handle_get(h, path: str, query: dict) -> bool:
     if path == "/v1/auth/methods":
         methods = auth.available()
         methods["wallet"]["chains"] = ["arc", "solana"]
-        # The redirect URI a provider must have registered. Surfaced because
-        # redirect_uri_mismatch is the single most common way this is misconfigured,
-        # and the fix is to paste this exact string into the provider's console.
-        for provider, cfg in auth.OAUTH.items():
-            if cfg["client_id"]:
-                methods[provider]["redirect_uri"] = _callback_url(h, provider)
-        h.reply(200, {"methods": methods, "rp_id": auth.RP_ID, "origins": auth.ORIGINS})
+        h.reply(200, {"methods": methods, "origins": auth.ORIGINS})
         return True
 
     if path == "/v1/auth/session":
@@ -81,42 +77,6 @@ def handle_get(h, path: str, query: dict) -> bool:
                           "identities": acct.get("identities", []),
                           "arc_address": h.store.arc_address(acct),
                           "arc_chain_id": arc.CHAIN_ID})
-        return True
-
-    if match := re.fullmatch(r"/v1/auth/oauth/(\w+)/start", path):
-        provider = match.group(1)
-        if provider not in auth.OAUTH:
-            h.fail_msg("invalid_request", f"unknown provider {provider!r}")
-            return True
-        redirect = query.get("redirect_uri", [""])[0] or _callback_url(h, provider)
-        state = h.store.stash("oauth", {"provider": provider, "redirect": redirect,
-                                        "return_to": query.get("return_to", ["/"])[0]})
-        try:
-            url = auth.oauth_start(provider, redirect, state)
-        except auth.AuthError as err:
-            h.fail_msg("invalid_request", str(err))
-            return True
-        h.send_response(302)
-        h.send_header("Location", url)
-        h.send_header("Content-Length", "0")
-        h._cors()
-        h.end_headers()
-        return True
-
-    if match := re.fullmatch(r"/v1/auth/oauth/(\w+)/callback", path):
-        _oauth_callback(h, match.group(1), query)
-        return True
-
-    # Providers hold an allow-list of redirect URIs, and an existing OAuth client
-    # often already has one registered under a different convention. Rather than
-    # insist on our own path, the common shapes are served as aliases so a client
-    # that is already set up needs no console change.
-    if match := re.fullmatch(r"/api/auth/(\w+)/callback", path):
-        _oauth_callback(h, match.group(1), query)
-        return True
-
-    if match := re.fullmatch(r"/api/auth/callback/(\w+)", path):
-        _oauth_callback(h, match.group(1), query)
         return True
 
     if path == "/v1/pay/methods":
@@ -134,90 +94,14 @@ def handle_get(h, path: str, query: dict) -> bool:
     return False
 
 
-def _callback_url(h, provider: str) -> str:
-    """The redirect URI, which must match the provider's registration exactly.
-
-    Derived from the Host header so local development needs no configuration, and
-    overridable because a deployment behind a proxy or a different hostname has to
-    send the URI that was actually registered.
-    """
-    import os
-    base = os.environ.get("ONEROUTER_OAUTH_REDIRECT_BASE", "").rstrip("/")
-    if not base:
-        host = h.headers.get("Host", "127.0.0.1:8080")
-        scheme = "https" if h.headers.get("X-Forwarded-Proto") == "https" else "http"
-        base = f"{scheme}://{host}"
-    # The path is configurable because it has to match the provider's registration
-    # exactly. `{provider}` is substituted so one setting covers every provider.
-    template = os.environ.get("ONEROUTER_OAUTH_CALLBACK_PATH",
-                              "/v1/auth/oauth/{provider}/callback")
-    return f"{base}{template.format(provider=provider)}"
-
-
-def _oauth_callback(h, provider: str, query: dict) -> None:
-    state = query.get("state", [""])[0]
-    row = h.store.take(state, "oauth")
-    if not row or row["provider"] != provider:
-        h.fail_msg("invalid_request", "this sign-in link has expired; start again")
-        return
-    if "error" in query:
-        h.fail_msg("invalid_request", f"{provider} returned {query['error'][0]}")
-        return
-    code = query.get("code", [""])[0]
-    if not code:
-        h.fail_msg("invalid_request", "no authorisation code came back")
-        return
-    try:
-        identity, label = auth.oauth_finish(provider, code, row["redirect"])
-    except auth.AuthError as err:
-        h.fail_msg("invalid_request", str(err))
-        return
-
-    acct, minted = h.store.sign_in(identity)
-    token = h.store.open_session(acct)
-    # The browser started this in a redirect, so it has to come back as one. The
-    # hand-off token is single-use and short-lived; the page swaps it for a session.
-    ref = h.store.stash("handoff", {"session": token, "account": acct["id"],
-                                    "label": label,
-                                    "key": minted["key"] if minted else None,
-                                    "recovery": minted["recovery"] if minted else None},
-                        ttl=120)
-    target = row.get("return_to") or "/"
-    sep = "&" if "?" in target else "?"
-    h.send_response(302)
-    h.send_header("Location", f"{target}{sep}handoff={urllib.parse.quote(ref)}")
-    h.send_header("Content-Length", "0")
-    h._cors()
-    h.end_headers()
-
-
 # ── POST ────────────────────────────────────────────────────────────────────────
 def handle_post(h, path: str, body: dict) -> bool:
-    if path == "/v1/auth/anonymous":
-        minted = h.store.mint()
-        acct = h.store.state["accounts"][minted["account"]]
-        signed_in(h, acct, minted)
-        return True
-
-    if path == "/v1/auth/handoff":
-        row = h.store.take(body.get("handoff", ""), "handoff")
-        if not row:
-            h.fail_msg("invalid_request", "that sign-in has already been used or expired")
-            return True
-        h.reply(200, {k: row[k] for k in
-                      ("session", "account", "label", "key", "recovery") if row.get(k)})
-        return True
-
     if path == "/v1/auth/email/start":
         _email_start(h, body)
         return True
 
     if path == "/v1/auth/email/verify":
         _email_verify(h, body)
-        return True
-
-    if path == "/v1/auth/email/attach":
-        _email_attach(h, body)
         return True
 
     if path == "/v1/auth/password/register":
@@ -238,25 +122,6 @@ def handle_post(h, path: str, body: dict) -> bool:
 
     if path == "/v1/auth/wallet/verify":
         _wallet_verify(h, body)
-        return True
-
-    if path == "/v1/auth/passkey/register/start":
-        _passkey_register_start(h)
-        return True
-
-    if path == "/v1/auth/passkey/register/finish":
-        _passkey_register_finish(h, body)
-        return True
-
-    if path == "/v1/auth/passkey/login/start":
-        ref = h.store.stash("passkey-login", {"challenge": auth.b64url(secrets.token_bytes(32))})
-        row = h.store.peek(ref, "passkey-login")
-        h.reply(200, {"ref": ref, "challenge": row["challenge"],
-                      "rp_id": auth.RP_ID, "timeout": 120000})
-        return True
-
-    if path == "/v1/auth/passkey/login/finish":
-        _passkey_login_finish(h, body)
         return True
 
     if path == "/v1/auth/signout":
@@ -321,25 +186,6 @@ def _check_code(h, body: dict):
         return None
     h.store.take(ref, "email")
     return row
-
-
-def _email_attach(h, body: dict) -> None:
-    """Puts an email on an account you already hold the key to. Proves both: the code
-    proves the address, the key proves the account."""
-    row = _check_code(h, body)
-    if not row:
-        return
-    acct = h.store.resolve(str(body.get("key", "")))
-    if not acct:
-        h.fail_msg("invalid_api_key", "that key was not recognised")
-        return
-    try:
-        h.store.link(acct, f"email:{row['email']}")
-    except ValueError:
-        h.fail_msg("invalid_request",
-                   "that email already signs into a different account")
-        return
-    signed_in(h, acct, None, {"label": row["email"]})
 
 
 # ── Passwords ───────────────────────────────────────────────────────────────────
@@ -414,7 +260,7 @@ def _password_login(h, body: dict) -> None:
 
 def _password_set(h, body: dict) -> None:
     """Adds or changes the password on the account you are already signed into, so an
-    account created by code, wallet or passkey can grow one."""
+    account created by code or wallet can grow one."""
     acct, err = principal(h)
     if err:
         h.fail_msg(err, "sign in first, then set a password on that account")
@@ -424,8 +270,6 @@ def _password_set(h, body: dict) -> None:
     if problem:
         h.fail_msg("invalid_request", problem)
         return
-    # Changing an existing password requires the old one; setting a first one does not,
-    # because the session already proved the account.
     if acct.get("password") and not h.store.password_matches(
             acct, str(body.get("current_password", ""))):
         h.fail_msg("invalid_request", "the current password is wrong")
@@ -472,72 +316,6 @@ def _wallet_verify(h, body: dict) -> None:
         return
     acct, minted = h.store.sign_in(f"{row['chain']}:{address.lower()}")
     signed_in(h, acct, minted, {"label": address, "chain": row["chain"]})
-
-
-# ── Passkeys ────────────────────────────────────────────────────────────────────
-def _passkey_register_start(h) -> None:
-    acct, err = principal(h)
-    if err:
-        h.fail(err, "sign in first, then add a passkey to that account")
-        return
-    challenge = auth.b64url(secrets.token_bytes(32))
-    ref = h.store.stash("passkey-register", {"challenge": challenge, "account": acct["id"]})
-    h.reply(200, {
-        "ref": ref, "challenge": challenge, "rp_id": auth.RP_ID,
-        "rp_name": h.brand, "timeout": 120000,
-        "user": {"id": auth.b64url(acct["id"].encode()), "name": acct["id"],
-                 "display_name": f"{h.brand} {acct['id']}"},
-        "pubkey_params": [{"type": "public-key", "alg": -7},
-                          {"type": "public-key", "alg": -257}],
-    })
-
-
-def _passkey_register_finish(h, body: dict) -> None:
-    row = h.store.take(str(body.get("ref", "")), "passkey-register")
-    if not row:
-        h.fail_msg("invalid_request", "that registration has expired; start again")
-        return
-    acct = h.store.account_by_id(row["account"])
-    if not acct:
-        h.fail_msg("invalid_api_key", "the account went away mid-registration")
-        return
-    try:
-        stored = auth.register_passkey(row["challenge"],
-                                       str(body.get("attestation", "")),
-                                       str(body.get("client_data", "")))
-    except (auth.AuthError, KeyError, ValueError, IndexError) as err:
-        h.fail_msg("invalid_request", f"the passkey did not verify: {err}")
-        return
-    h.store.save_credential(stored["credential_id"], acct["id"], stored["cose"],
-                            stored["sign_count"], str(body.get("label", "passkey")))
-    h.store.link(acct, f"passkey:{stored['credential_id']}")
-    h.reply(200, {"credential_id": stored["credential_id"], "account": acct["id"]})
-
-
-def _passkey_login_finish(h, body: dict) -> None:
-    row = h.store.take(str(body.get("ref", "")), "passkey-login")
-    if not row:
-        h.fail_msg("invalid_request", "that sign-in has expired; start again")
-        return
-    cred_id = str(body.get("credential_id", ""))
-    cred = h.store.credential(cred_id)
-    if not cred:
-        h.fail_msg("invalid_api_key", "that passkey is not registered here")
-        return
-    try:
-        count = auth.verify_passkey(
-            row["challenge"], cred["public_key"], cred.get("sign_count", 0),
-            str(body.get("authenticator_data", "")), str(body.get("client_data", "")),
-            str(body.get("signature", "")))
-    except (auth.AuthError, ValueError, KeyError) as err:
-        h.fail_msg("invalid_request", f"the passkey did not verify: {err}")
-        return
-    h.store.touch_credential(cred_id, count)
-    acct = h.store.account_by_id(cred["account"])
-    if not acct:
-        h.fail_msg("invalid_api_key", "the account behind that passkey is gone")
-        return
-    signed_in(h, acct, None, {"label": cred.get("label", "passkey")})
 
 
 # ── Deposits ────────────────────────────────────────────────────────────────────

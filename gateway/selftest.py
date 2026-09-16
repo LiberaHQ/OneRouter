@@ -2,9 +2,9 @@
 
     python3 gateway/selftest.py
 
-Checks that a real signature verifies and — the half that matters — that a forged
-one, a replayed challenge, a foreign origin and a rewound counter are all refused.
-Also pins Keccak-256 and EIP-55 to their published vectors.
+Checks that a real signature verifies and — the half that matters — that a forged one
+and one from another wallet are refused. Also pins Keccak-256, EIP-55 and the QR
+encoder to their published vectors.
 """
 import hashlib, json, sys
 from pathlib import Path
@@ -13,96 +13,18 @@ from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 from cryptography.hazmat.primitives import hashes
 from gateway import auth
 
-def enc(value):
-    """Tiny CBOR encoder, test-side only."""
-    if isinstance(value, int):
-        if value >= 0: major, n = 0, value
-        else: major, n = 1, -1 - value
-        if n < 24: return bytes([major << 5 | n])
-        if n < 256: return bytes([major << 5 | 24, n])
-        if n < 65536: return bytes([major << 5 | 25]) + n.to_bytes(2, "big")
-        return bytes([major << 5 | 26]) + n.to_bytes(4, "big")
-    if isinstance(value, bytes):
-        return enc_head(2, len(value)) + value
-    if isinstance(value, str):
-        raw = value.encode(); return enc_head(3, len(raw)) + raw
-    if isinstance(value, list):
-        return enc_head(4, len(value)) + b"".join(enc(v) for v in value)
-    if isinstance(value, dict):
-        return enc_head(5, len(value)) + b"".join(enc(k) + enc(v) for k, v in value.items())
-    raise TypeError(value)
-
-def enc_head(major, n):
-    if n < 24: return bytes([major << 5 | n])
-    if n < 256: return bytes([major << 5 | 24, n])
-    if n < 65536: return bytes([major << 5 | 25]) + n.to_bytes(2, "big")
-    return bytes([major << 5 | 26]) + n.to_bytes(4, "big")
-
 ok = fail = 0
 def check(name, cond, detail=""):
     global ok, fail
     if cond: ok += 1; print(f"  PASS  {name}")
     else: fail += 1; print(f"  FAIL  {name} {detail}")
 
-# ── CBOR round trip ────────────────────────────────────────────────────────
-sample = {1: 2, 3: -7, -1: 1, "fmt": "none", "b": b"\x01\x02", "a": [1, 2, 3]}
-decoded, _ = auth.cbor(enc(sample))
-check("cbor round trip", decoded == sample, f"{decoded}")
-
-# ── Passkey registration + assertion ───────────────────────────────────────
-priv = ec.generate_private_key(ec.SECP256R1())
-nums = priv.public_key().public_numbers()
-cose = enc({1: 2, 3: -7, -1: 1,
-            -2: nums.x.to_bytes(32, "big"), -3: nums.y.to_bytes(32, "big")})
-rp_hash = hashlib.sha256(auth.RP_ID.encode()).digest()
-cred_id = b"\x11" * 20
-auth_data = rp_hash + bytes([0x41]) + (0).to_bytes(4, "big") + \
-            b"\x00" * 16 + len(cred_id).to_bytes(2, "big") + cred_id + cose
-attestation = auth.b64url(enc({"fmt": "none", "attStmt": {}, "authData": auth_data}))
-
-challenge = auth.b64url(b"challenge-bytes-here")
-client_create = auth.b64url(json.dumps({
-    "type": "webauthn.create", "challenge": challenge,
-    "origin": auth.ORIGINS[0]}).encode())
-
-stored = auth.register_passkey(challenge, attestation, client_create)
-check("registration verifies", stored["credential_id"] == auth.b64url(cred_id))
-
-# assertion
-challenge2 = auth.b64url(b"second-challenge")
-client_get = json.dumps({"type": "webauthn.get", "challenge": challenge2,
-                         "origin": auth.ORIGINS[0]}).encode()
-assert_data = rp_hash + bytes([0x01]) + (5).to_bytes(4, "big")
-signature = priv.sign(assert_data + hashlib.sha256(client_get).digest(),
-                      ec.ECDSA(hashes.SHA256()))
-count = auth.verify_passkey(challenge2, stored["cose"], 0, auth.b64url(assert_data),
-                            auth.b64url(client_get), auth.b64url(signature))
-check("assertion verifies", count == 5, f"count={count}")
-
-# ── Negative cases: these must all be rejected ─────────────────────────────
 def rejects(name, fn):
+    """The half that matters: a forgery must raise, not verify."""
     try:
         fn(); check(name, False, "accepted something it should refuse")
     except auth.AuthError:
         check(name, True)
-
-rejects("rejects a forged signature", lambda: auth.verify_passkey(
-    challenge2, stored["cose"], 0, auth.b64url(assert_data),
-    auth.b64url(client_get), auth.b64url(b"\x00" * 70)))
-
-rejects("rejects a replayed challenge", lambda: auth.verify_passkey(
-    auth.b64url(b"different-challenge"), stored["cose"], 0,
-    auth.b64url(assert_data), auth.b64url(client_get), auth.b64url(signature)))
-
-bad_origin = json.dumps({"type": "webauthn.get", "challenge": challenge2,
-                         "origin": "https://evil.example"}).encode()
-rejects("rejects a foreign origin", lambda: auth.verify_passkey(
-    challenge2, stored["cose"], 0, auth.b64url(assert_data),
-    auth.b64url(bad_origin), auth.b64url(signature)))
-
-rejects("rejects a counter that went backwards", lambda: auth.verify_passkey(
-    challenge2, stored["cose"], 99, auth.b64url(assert_data),
-    auth.b64url(client_get), auth.b64url(signature)))
 
 # ── Solana wallet ──────────────────────────────────────────────────────────
 wallet = ed25519.Ed25519PrivateKey.generate()

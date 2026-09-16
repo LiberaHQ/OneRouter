@@ -599,15 +599,6 @@ def main() -> None:
               f"{', '.join(sorted(LOADED_ENV))}")
     if DEV_CREDIT:
         print("  credit:  POST /v1/me/credit is OPEN — development only")
-    from gateway import auth as _auth
-    for provider, cfg in _auth.OAUTH.items():
-        if cfg["client_id"]:
-            base = os.environ.get("ONEROUTER_OAUTH_REDIRECT_BASE",
-                                  f"http://127.0.0.1:{port}").rstrip("/")
-            template = os.environ.get("ONEROUTER_OAUTH_CALLBACK_PATH",
-                                      "/v1/auth/oauth/{provider}/callback")
-            print(f"  {provider}:  redirect URI in use (must match the provider) —")
-            print(f"           {base}{template.format(provider=provider)}")
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
 
 

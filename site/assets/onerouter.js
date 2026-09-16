@@ -572,6 +572,8 @@
 
     // What the gateway will actually accept — a method it cannot serve is disabled
     // with its reason rather than left to fail when clicked.
+    // A method the gateway cannot serve is disabled with its reason, rather than
+    // left to fail when clicked.
     fetch(api + '/auth/methods').then((r) => r.json()).then(({ methods }) => {
       for (const btn of document.querySelectorAll('[data-method]')) {
         const spec = methods[btn.dataset.method];
@@ -580,15 +582,6 @@
           btn.title = spec.note;
         }
       }
-      if (!window.PublicKeyCredential) {
-        const pk = document.querySelector('[data-method="passkey"]');
-        if (pk) { pk.disabled = true; pk.title = 'this browser has no passkey support'; }
-      }
-      try {
-        const last = localStorage.getItem('or-last-method');
-        const badge = document.querySelector(`[data-method="${last}"] .auth-last`);
-        if (badge) badge.hidden = false;
-      } catch {}
     }).catch(() => say('Could not reach the gateway. Is it running?', 'bad'));
 
     // ── Landing an account ────────────────────────────────────────────
@@ -727,249 +720,18 @@
       }
     };
 
-    // ── Passkeys ──────────────────────────────────────────────────────
-    const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)))
-      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    const unb64 = (text) => {
-      const pad = text.replace(/-/g, '+').replace(/_/g, '/');
-      const raw = atob(pad + '='.repeat((4 - pad.length % 4) % 4));
-      return Uint8Array.from(raw, (c) => c.charCodeAt(0));
-    };
-    const passkeyLogin = async () => {
-      say('Choose your passkey…');
-      try {
-        const start = await post('/auth/passkey/login/start');
-        const cred = await navigator.credentials.get({ publicKey: {
-          challenge: unb64(start.challenge), rpId: start.rp_id,
-          timeout: start.timeout, userVerification: 'preferred' } });
-        landed(await post('/auth/passkey/login/finish', {
-          ref: start.ref, credential_id: cred.id,
-          authenticator_data: b64(cred.response.authenticatorData),
-          client_data: b64(cred.response.clientDataJSON),
-          signature: b64(cred.response.signature) }), 'passkey');
-      } catch (err) {
-        say(err.name === 'NotAllowedError' ? 'Passkey prompt dismissed.'
-            : `${err.message} — a passkey has to be registered on this account first.`, 'bad');
-      }
-    };
-
-    // ── Attach an identity to a key you already hold ──────────────────
-    const attachFlow = () => {
-      panel.hidden = false;
-      panel.innerHTML = `<h2>Attach an email to a key</h2>
-        <p>Signs the key's account in by email from now on. The key keeps working
-          exactly as it does today.</p>
-        <label for="auth-key">Your API key</label>
-        <input id="auth-key" type="password" placeholder="or-live-…" autocomplete="off">
-        <label for="auth-addr">Email address</label>
-        <input id="auth-addr" type="email" placeholder="you@example.com">
-        <div class="auth-actions"><button class="btn primary" id="auth-attach">Send code</button></div>`;
-      document.getElementById('auth-attach').addEventListener('click', async () => {
-        const key = document.getElementById('auth-key').value.trim();
-        const address = document.getElementById('auth-addr').value.trim();
-        say('Sending…');
-        try {
-          const out = await post('/auth/email/start', { email: address });
-          panel.innerHTML = `<h2>Enter the code</h2>
-            <p>Sent to <b>${address}</b>.</p>
-            <label for="auth-code">Six-digit code</label>
-            <input id="auth-code" class="code" inputmode="numeric" maxlength="6">
-            <div class="auth-actions"><button class="btn primary" id="auth-check">Attach</button></div>
-            ${out.code ? `<p style="margin-top:12px">Code: <b>${out.code}</b></p>` : ''}`;
-          document.getElementById('auth-check').addEventListener('click', async () => {
-            try {
-              const done = await post('/auth/email/attach',
-                { ref: out.ref, code: document.getElementById('auth-code').value.trim(), key });
-              remember('or-key', key);
-              remember('or-session', done.session);
-              say(`Attached to ${done.account}. That email now signs into this key.`, 'ok');
-              panel.innerHTML = `<h2>Attached</h2><p>${address} now signs into
-                <code>${done.account}</code>.</p>`;
-            } catch (err) { say(err.message, 'bad'); }
-          });
-        } catch (err) { say(err.message, 'bad'); }
-      });
-    };
-
     // ── Dispatch ──────────────────────────────────────────────────────
     document.addEventListener('click', async (e) => {
       const btn = e.target.closest('[data-method]');
       if (!btn || btn.disabled) return;
       const how = btn.dataset.method;
-      panel.hidden = how === 'anonymous' || how === 'wallet' || how === 'passkey';
+      panel.hidden = how === 'wallet';
       say('');
       try {
         if (how === 'email') emailFlow();
-        else if (how === 'attach') attachFlow();
         else if (how === 'wallet') await walletFlow();
-        else if (how === 'passkey') await passkeyLogin();
-        else if (how === 'anonymous') {
-          remember('or-last-method', 'anonymous');
-          location.href = '/keys?start=1';   // choose a rail, then mint
-        }
-        else if (how === 'google' || how === 'github') {
-          remember('or-last-method', how);
-          const back = encodeURIComponent(location.origin + '/signin');
-          location.href = `${api}/auth/oauth/${how}/start?return_to=${back}`;
-        }
       } catch (err) { say(err.message, 'bad'); }
     });
-
-    // Coming back from an OAuth redirect: swap the one-shot handoff for a session.
-    const handoff = new URLSearchParams(location.search).get('handoff');
-    if (handoff) {
-      history.replaceState({}, '', location.pathname);
-      post('/auth/handoff', { handoff })
-        .then((data) => landed({ ...data, new_account: !!data.key,
-                                 balance_usd: data.balance_usd || 0 }, 'oauth'))
-        .catch((err) => say(err.message, 'bad'));
-    }
-  }
-
-  // ── Get a key: choose, mint, send, ready ───────────────────────────
-  // The whole no-account path. Everything real happens at the gateway: it mints the
-  // key, it owns the deposit address, and it watches the chain. This page only asks.
-  const getkey = document.getElementById('getkey');
-  if (getkey) {
-    const api = getkey.dataset.api;
-    const el = (id) => document.getElementById(id);
-    const status = el('getkey-status');
-    const steps = [...document.querySelectorAll('.step')];
-    const marks = [...document.querySelectorAll('#flow li')];
-    let key = '', deposit = null, poll = null, rail = null;
-
-    const store = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-    const say = (text, kind = '') => {
-      status.textContent = text;
-      status.className = 'note ' + kind;
-    };
-    const show = (n) => {
-      steps.forEach((s) => { s.hidden = Number(s.dataset.step) !== n; });
-      marks.forEach((m) => m.classList.toggle('on', Number(m.dataset.step) <= n));
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    };
-    document.querySelectorAll('[data-back]').forEach((b) =>
-      b.addEventListener('click', () => show(Number(b.dataset.back))));
-
-    // What the gateway can actually take, before anyone commits to a step.
-    fetch(api + '/pay/methods').then((r) => r.json()).then(({ arc }) => {
-      rail = arc;
-      el('rail-label').textContent = arc.ready
-        ? `USDC on ${arc.network}${arc.chain_id ? ` · chain ${arc.chain_id}` : ''}`
-        : 'USDC on Arc — not configured on this gateway';
-      el('pay-sub').textContent = `${arc.network} · $${arc.minimum_usd} minimum`;
-      el('addr-label').textContent = `${arc.network} payment address`;
-      if (!arc.ready) {
-        say(`Deposits are unavailable: ${arc.reason}. You can still take a key — the ` +
-            'free model costs nothing to use.', 'bad');
-      }
-    }).catch(() => say('Could not reach the gateway.', 'bad'));
-
-    // ── 01 -> 02: mint ──────────────────────────────────────────────
-    el('go-key').addEventListener('click', async () => {
-      const btn = el('go-key');
-      btn.disabled = true;
-      btn.textContent = 'Creating your key…';
-      try {
-        const res = await fetch(api + '/keys', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        if (!res.ok) throw new Error(`the gateway answered ${res.status}`);
-        const data = await res.json();
-        key = data.key;
-        store('or-key', key);
-        el('the-key').textContent = key;
-        el('copy-key').dataset.copy = key;
-        el('the-recovery').textContent = data.recovery_url;
-        el('the-recovery').dataset.copy = data.recovery_url;
-        say('');
-        show(1);
-      } catch (err) {
-        say(`Could not create a key — ${err.message}.`, 'bad');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Continue';
-      }
-    });
-
-    // ── 02 -> 03: open a deposit and start watching ─────────────────
-    el('go-pay').addEventListener('click', async () => {
-      if (!rail?.ready) {
-        say('This gateway has no deposit address configured, so there is nowhere to ' +
-            'send funds. Your key still works on the free model.', 'bad');
-        return;
-      }
-      const btn = el('go-pay');
-      btn.disabled = true;
-      try {
-        const res = await fetch(api + '/pay/deposit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key },
-          body: JSON.stringify({ amount_usd: rail.minimum_usd }),
-        });
-        deposit = await res.json();
-        if (!res.ok) throw new Error(deposit?.error?.message || `answered ${res.status}`);
-        el('pay-address').textContent = deposit.address;
-        el('copy-address').dataset.copy = deposit.address;
-        el('pay-amount').textContent = `${Number(deposit.suggested_usd).toFixed(2)} USDC`;
-        const warn = el('livewarn');
-        if (deposit.mainnet) {
-          warn.hidden = false;
-          warn.innerHTML = '<b>Live network.</b> This is Arc mainnet (chain ' +
-            `${deposit.chain_id}). USDC sent to this address is real money, and the ` +
-            'transfer cannot be reversed. Check the address before sending.';
-        } else {
-          warn.hidden = true;
-        }
-        // The QR comes from the gateway, which checks it decodes back to this exact
-        // address before serving it.
-        el('qr').src = `${api}/pay/deposit/${deposit.reference}/qr.svg`;
-        show(2);
-        watch();
-      } catch (err) {
-        say(`Could not open a deposit — ${err.message}.`, 'bad');
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
-    // ── 03 -> 04: the chain decides when ────────────────────────────
-    const label = {
-      waiting: 'Waiting', pending: 'Seen — confirming', confirmed: 'Confirmed',
-      credited: 'Credited', expired: 'Expired',
-    };
-    const amountOf = (d) => Number(d.received_usd || 0);
-    const check = async () => {
-      try {
-        const res = await fetch(`${api}/pay/deposit/${deposit.reference}`,
-                                { headers: { Authorization: 'Bearer ' + key } });
-        if (!res.ok) return;
-        const now = await res.json();
-        deposit = { ...deposit, ...now };
-        el('pay-state').textContent = now.status === 'pending'
-          ? `Seen — ${now.confirmations_seen || 0}/${now.confirmations} confirmations`
-          : (label[now.status] || now.status);
-        if (now.chain_error) say(now.chain_error, 'bad');
-        if (now.status === 'credited') {
-          clearInterval(poll);
-          el('final-balance').textContent = '$' + Number(now.balance_usd).toFixed(4);
-          const last = (now.seen || [])[now.seen.length - 1];
-          el('final-tx').textContent = last
-            ? `Received ${amountOf(now).toFixed(6)} USDC · ${last.tx}` : '';
-          show(3);
-        } else if (now.status === 'expired') {
-          clearInterval(poll);
-          say('Nothing arrived within the hour. Start a new deposit.', 'bad');
-        }
-      } catch { /* a blip in polling is not worth surfacing; the next tick retries */ }
-    };
-    const watch = () => {
-      clearInterval(poll);
-      poll = setInterval(check, 5000);
-      check();
-    };
-
-    // Arriving from "continue without an account" starts the flow straight away.
-    if (new URLSearchParams(location.search).get('start') === '1') el('go-key').click();
   }
 
   // ── Add credit: choose an amount, then the deposit page ────────────
