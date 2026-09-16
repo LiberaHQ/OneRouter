@@ -1,0 +1,32 @@
+[
+ {"month":"September 2026","items":[
+  {"date":"2026-09-09","tag":"Docs","title":"Documentation is generated from the gateway's own catalog.",
+   "body":"The errors page is built from the same error catalog the gateway serves, so a code cannot exist in one and not the other. Every page is also available as Markdown and in one combined corpus for agents.",
+   "link":["Read the errors page","/docs/errors"]},
+  {"date":"2026-09-08","tag":"Models","title":"The Open Tier adds no-deposit API access.",
+   "body":"onerouter/auto:free serves API and playground requests at a permanent $0 charge with account-wide daily quotas. It never falls back to a paid model, even after you add credit.",
+   "link":["Check availability","/models/auto/free"]},
+  {"date":"2026-09-07","tag":"Operate","title":"Budgets: one spend ceiling across several keys.",
+   "body":"Per-key caps could not express \"these six agents cost at most $20 a day between them\". Now a named budget can, and a 429 names which budget stopped the request.",
+   "link":["Read about budgets","/docs/budgets"]},
+  {"date":"2026-09-05","tag":"Reliability","title":"Every response carries a route receipt.",
+   "body":"x-onerouter-receipt resolves to the ordered candidate list, which host was tried, why each earlier one was skipped, and the TTFT of the one that answered. A failover is now a record, not a claim.",
+   "link":["How failover works","/docs/failover"]},
+  {"date":"2026-09-04","tag":"Privacy","title":"Content retention is off by default.",
+   "body":"Prompts and completions are no longer captured unless debug capture is switched on for a specific key, and captures now expire after 60 minutes rather than 24 hours.",
+   "link":["Data handling","/docs/privacy"]},
+  {"date":"2026-09-02","tag":"Models","title":"The auto router resolves before pricing.",
+   "body":"onerouter/auto now picks a concrete model before the hold is taken, so the worst case you are quoted is the worst case you can be charged. The resolution table is public."}
+ ]},
+ {"month":"August 2026","items":[
+  {"date":"2026-08-28","tag":"Pricing","title":"A calculator that runs on live catalog rates.",
+   "body":"Pick a model, set a workload, read the figure. It uses the same published rates the ledger meters against.",
+   "link":["Estimate a workload","/pricing"]},
+  {"date":"2026-08-21","tag":"Payments","title":"Direct stablecoin deposits start at $0.50.",
+   "body":"Aggregated rails still start at $5 because of their flat fee. Deposit capabilities, copy and validation now all agree on the lower floor."},
+  {"date":"2026-08-14","tag":"API","title":"Anthropic Messages and OpenAI Responses joined chat completions.",
+   "body":"Three request shapes, one key, one catalog. Tool loops, images and structured output pass through untouched on all three."},
+  {"date":"2026-08-06","tag":"Access","title":"Keys exist before payment.",
+   "body":"Setup returns an API key and a permanent recovery link before a payment address is shown, so a client can be configured and tested while a deposit confirms."}
+ ]}
+]

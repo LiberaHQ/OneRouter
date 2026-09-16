@@ -1,0 +1,164 @@
+[
+  {
+    "code": "invalid_api_key",
+    "http": 401,
+    "type": "invalid_request_error",
+    "title": "Invalid API key",
+    "retryable": false,
+    "message": "Invalid API key. Keys start with `or-live-` and are created at {{SITE}}/keys, or with `POST /v1/keys`. A key from another gateway will not work here.",
+    "fix": "Create a key at {{SITE}}/keys. Rotation with the recovery secret replaces the key immediately \u2014 there is no grace window, so swap it in one move."
+  },
+  {
+    "code": "missing_api_key",
+    "http": 401,
+    "type": "invalid_request_error",
+    "title": "No bearer token",
+    "retryable": false,
+    "message": "Missing bearer token. Send your key as 'Authorization: Bearer or-live-...'.",
+    "fix": "Send the header. A client that holds the key but omits it is almost always reading an unset environment variable \u2014 echo it before blaming the gateway."
+  },
+  {
+    "code": "insufficient_credit",
+    "http": 402,
+    "type": "invalid_request_error",
+    "title": "Insufficient credit",
+    "retryable": false,
+    "message": "Insufficient credit: this key's balance will not cover the request, so it was not sent and nothing was charged. Top up at {{SITE}}/pay",
+    "fix": "Add credit. The message tells you which case you hit. A pre-request refusal names your balance and the worst-case estimate it could not cover, and nothing was sent or charged. A mid-stream stop names what the delivered tokens actually cost. The `x-onerouter-balance-usd` header on the 402 is the same available balance."
+  },
+  {
+    "code": "unknown_model",
+    "http": 404,
+    "type": "invalid_request_error",
+    "title": "Unknown model",
+    "retryable": false,
+    "message": "Unknown model 'claude-sonnet-5'. Did you mean 'anthropic/claude-sonnet-5'? Full list: {{API}}/catalog",
+    "fix": "Use an id from the catalog, in author/name form. The suggestion is computed from the closest published id, so an agent can correct itself without a human."
+  },
+  {
+    "code": "model_unavailable",
+    "http": 503,
+    "type": "api_error",
+    "title": "All upstreams unavailable",
+    "retryable": true,
+    "message": "All upstream hosts for 'meta-llama/llama-3.3-70b-instruct' are failing right now (we tried 3). Live status: {{SITE}}/status. Working alternatives at this moment: 'deepseek/deepseek-v4-flash', 'mistralai/mistral-nemo'.",
+    "fix": "Retry, or switch to one of the named alternatives. Naming a live alternative inside the error is deliberate: an agent can act on it without a human reading a status page."
+  },
+  {
+    "code": "auto_unresolvable",
+    "http": 503,
+    "type": "api_error",
+    "title": "No model available for auto",
+    "retryable": true,
+    "message": "'onerouter/auto:code' has no model available for this request right now \u2014 every candidate was unavailable, not allowed on this key, or unable to price the request. Name a model directly, or retry shortly. Current picks: {{SITE}}/models/auto",
+    "fix": "Auto walked its ordered list and every candidate failed one of three tests. The resolution table is public; pick a model by name to bypass the router entirely."
+  },
+  {
+    "code": "no_free_route",
+    "http": 503,
+    "type": "api_error",
+    "title": "No Open Tier capacity",
+    "retryable": true,
+    "message": "No verified free route is available. This request was not switched to a paid model and nothing was charged. Availability: {{SITE}}/models/auto/free",
+    "fix": "Retry later. The Open Tier never falls back to paid, so adding credit will not resolve this \u2014 name a paid model explicitly if you need the request served now."
+  },
+  {
+    "code": "free_quota_exceeded",
+    "http": 429,
+    "type": "rate_limit_error",
+    "title": "Open Tier allowance spent",
+    "retryable": true,
+    "message": "Your Open Tier allowance is exhausted. Retry after the time in Retry-After. Quotas reset at 00:00 UTC.",
+    "fix": "Wait for the reset. Every key on the account shares one allowance, so minting another key does not reset it, and adding credit does not raise it."
+  },
+  {
+    "code": "rate_limited",
+    "http": 429,
+    "type": "rate_limit_error",
+    "title": "Rate limited",
+    "retryable": true,
+    "message": "Rate limited: this key allows 60 requests/minute. Raise it at {{SITE}}/keys",
+    "fix": "Back off for the number of seconds in Retry-After, then retry the identical request. The message names both the limit and the knob \u2014 a 429 that names neither is a dead end."
+  },
+  {
+    "code": "budget_exhausted",
+    "http": 429,
+    "type": "rate_limit_error",
+    "title": "Budget spent",
+    "retryable": true,
+    "message": "This request exceeds the daily cap on budget 'nightly-agents' ($20.00/day, $19.94 used). Review it at {{SITE}}/docs/budgets",
+    "fix": "Raise the named budget or wait for its window to reset. Open reservations count immediately, so concurrent requests cannot bypass a cap a serial request would have hit."
+  },
+  {
+    "code": "context_too_long",
+    "http": 400,
+    "type": "invalid_request_error",
+    "title": "Context too long",
+    "retryable": false,
+    "message": "Request is 182,400 tokens but 'meta-llama/llama-3.3-70b-instruct' accepts 131,072. Models with larger context: {{SITE}}/models",
+    "fix": "Shorten the prompt or pick a longer-context model. The counts are named so you can tell how far over you are without instrumenting your own tokenizer."
+  },
+  {
+    "code": "payload_too_large",
+    "http": 413,
+    "type": "invalid_request_error",
+    "title": "Request body too large",
+    "retryable": false,
+    "message": "Request body exceeds the 10 MB limit.",
+    "fix": "Trim the request. A body this size is almost always an accidentally inlined file or a runaway conversation history. The edge refuses it before reading it all rather than buffering it into memory."
+  },
+  {
+    "code": "upstream_error",
+    "http": 502,
+    "type": "api_error",
+    "title": "Upstream error",
+    "retryable": true,
+    "message": "The upstream returned an error after we had begun streaming, so we could not move to another host without corrupting the response. Live status: {{SITE}}/status",
+    "fix": "Retry the request. If output had barely started \u2014 under 50 tokens \u2014 the charge is written off automatically rather than billed for a response you cannot use."
+  },
+  {
+    "code": "request_timeout",
+    "http": 504,
+    "type": "api_error",
+    "title": "Request timed out",
+    "retryable": true,
+    "message": "No first token from any upstream within 30s, across 3 hosts. Live status: {{SITE}}/status",
+    "fix": "Retry. Before the first byte reaches you we can and do switch hosts automatically; after it, we cannot."
+  },
+  {
+    "code": "invalid_request",
+    "http": 400,
+    "type": "invalid_request_error",
+    "title": "Invalid request",
+    "retryable": false,
+    "message": "'messages' must be a non-empty array. See {{SITE}}/docs/errors#invalid_request",
+    "fix": "Check the field named in the message. On the Open Tier this also covers routing overrides \u2014 `models`, `provider`, `route`, `fallbacks` \u2014 which are refused rather than silently ignored. For base-URL mistakes, use {{API}} with no endpoint suffix."
+  },
+  {
+    "code": "unsupported_endpoint",
+    "http": 400,
+    "type": "invalid_request_error",
+    "title": "Endpoint not served",
+    "retryable": false,
+    "message": "Embeddings are not served by this gateway. OneRouter serves text generation only.",
+    "fix": "Move to /v1/chat/completions, /v1/responses or /v1/messages. Unsupported surfaces answer with a sentence rather than a 404 so a misconfigured client is told what to do instead of guessing."
+  },
+  {
+    "code": "account_suspended",
+    "http": 403,
+    "type": "invalid_request_error",
+    "title": "Account suspended",
+    "retryable": false,
+    "message": "This account is suspended. Contact {{SITE}}/support to resolve it.",
+    "fix": "Contact support. Suspension follows a chargeback, a sanctions-screening hit, or an acceptable-use breach \u2014 the reply names which."
+  },
+  {
+    "code": "internal_error",
+    "http": 500,
+    "type": "api_error",
+    "title": "Unhandled error",
+    "retryable": true,
+    "message": "Internal server error.",
+    "fix": "Retry, then report it with the receipt id from x-onerouter-receipt. This message carries no detail on purpose: an unhandled exception must never surface a stack frame that could carry prompt text into a response body or a log line."
+  }
+]

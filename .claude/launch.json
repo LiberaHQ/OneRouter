@@ -1,0 +1,22 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "onerouter-dev",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "dev.py"
+      ],
+      "port": 4321
+    },
+    {
+      "name": "onerouter-site",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "serve.py",
+        "4321"
+      ],
+      "port": 4321
+    }
+  ]
+}

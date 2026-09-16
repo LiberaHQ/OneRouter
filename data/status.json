@@ -1,0 +1,154 @@
+{
+ "checked_at": "2026-09-09T14:05:00Z",
+ "providers": [
+  {
+   "name": "together",
+   "state": "operational",
+   "latency_ms": 312,
+   "sample": "meta/llama-4-70b"
+  },
+  {
+   "name": "fireworks",
+   "state": "operational",
+   "latency_ms": 287,
+   "sample": "deepseek/deepseek-v4-flash"
+  },
+  {
+   "name": "deepinfra",
+   "state": "operational",
+   "latency_ms": 441,
+   "sample": "alibaba/qwen-3-235b"
+  },
+  {
+   "name": "novita",
+   "state": "degraded",
+   "latency_ms": 1874,
+   "sample": "mistral/ministral-14b"
+  },
+  {
+   "name": "baseten",
+   "state": "operational",
+   "latency_ms": 356,
+   "sample": "zai/glm-5.3-flash"
+  },
+  {
+   "name": "groq",
+   "state": "operational",
+   "latency_ms": 118,
+   "sample": "meta/llama-4-70b"
+  },
+  {
+   "name": "anthropic",
+   "state": "operational",
+   "latency_ms": 1087,
+   "sample": "anthropic/claude-haiku-5"
+  },
+  {
+   "name": "openai",
+   "state": "operational",
+   "latency_ms": 779,
+   "sample": "openai/gpt-5.6-luna"
+  },
+  {
+   "name": "google",
+   "state": "operational",
+   "latency_ms": 504,
+   "sample": "google/gemini-3.8-flash"
+  },
+  {
+   "name": "moonshot",
+   "state": "down",
+   "latency_ms": 0,
+   "sample": "moonshot/kimi-k3"
+  }
+ ],
+ "families": [
+  {
+   "author": "alibaba",
+   "healthy": 8,
+   "models": 4
+  },
+  {
+   "author": "anthropic",
+   "healthy": 9,
+   "models": 3
+  },
+  {
+   "author": "deepseek",
+   "healthy": 6,
+   "models": 3
+  },
+  {
+   "author": "google",
+   "healthy": 5,
+   "models": 3
+  },
+  {
+   "author": "inclusionai",
+   "healthy": 2,
+   "models": 1
+  },
+  {
+   "author": "kwaipilot",
+   "healthy": 3,
+   "models": 2
+  },
+  {
+   "author": "meta",
+   "healthy": 6,
+   "models": 2
+  },
+  {
+   "author": "mistral",
+   "healthy": 4,
+   "models": 2
+  },
+  {
+   "author": "moonshot",
+   "healthy": 2,
+   "models": 2
+  },
+  {
+   "author": "openai",
+   "healthy": 6,
+   "models": 4
+  },
+  {
+   "author": "poolside",
+   "healthy": 4,
+   "models": 2
+  },
+  {
+   "author": "spacexai",
+   "healthy": 2,
+   "models": 1
+  },
+  {
+   "author": "tencent",
+   "healthy": 3,
+   "models": 1
+  },
+  {
+   "author": "thinkingmachines",
+   "healthy": 1,
+   "models": 1
+  },
+  {
+   "author": "xiaomi",
+   "healthy": 3,
+   "models": 1
+  },
+  {
+   "author": "zai",
+   "healthy": 5,
+   "models": 2
+  }
+ ],
+ "gateway": {
+  "error_rate_24h": 0.61,
+  "error_rate_7d": 1.12,
+  "ttft_median_ms": 389,
+  "ttft_p95_ms": 2140,
+  "requests_24h": 18422
+ }
+}

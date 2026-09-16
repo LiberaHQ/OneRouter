@@ -1,0 +1,14 @@
+# Secrets — never commit.
+.env
+
+# Gateway state: account balances, session tokens, and the Arc master seed that every
+# deposit address is derived from.
+gateway/state.json
+gateway/state.json.tmp
+
+# Generated output.
+public/
+
+# Python
+__pycache__/
+*.py[cod]
