@@ -22,8 +22,8 @@ python3 gateway/server.py 8080
 
 Python 3.11+. The site build is standard library only — no Node, no package manager, no
 install step, no network access at build time. The gateway adds one optional dependency,
-`cryptography`, used to verify passkey and wallet signatures; without it those two
-sign-in methods report themselves unavailable and everything else still runs.
+`cryptography`, used to verify wallet signatures; without it wallet sign-in reports
+itself unavailable and everything else still runs.
 
 `serve.py` is a dev server, not a deployment target: it answers a real 404 for a missing
 page, refuses path traversal, and serves `.md`/`.txt` with correct content types. For
@@ -43,7 +43,7 @@ production, point any static host at `public/` with "clean URLs" enabled (serve
 | `data/*.json` | Model catalog, host status, changelog. Drives four pages, plus one detail page per model. |
 | `site/build.py` | The generator: Markdown subset, directives, templates. |
 | `gateway/` | The gateway: keys, balances, routing, streaming completions. |
-| `gateway/auth.py` | Sign-in: WebAuthn, wallet signatures, OAuth, email codes. |
+| `gateway/auth.py` | Sign-in: wallet signatures and email codes. |
 | `gateway/evm.py` | Keccak-256, EIP-55, secp256k1 recovery. |
 | `gateway/arc.py` | USDC deposits on Arc, and watching for them. |
 | `gateway/wallet.py` | Per-account Arc addresses, derived from one seed. |
@@ -179,89 +179,44 @@ does not return a usage block. Prices come from `data/models.json`, which is see
 
 ## Signing in
 
-`/signin` is the front door. Six ways in, all verified by the gateway:
+`/signin` is the front door. Two ways in, both verified by the gateway:
 
 | Method | How it is proved |
 |---|---|
-| Email + password | scrypt, per-account salt, throttled to eight attempts per
-  fifteen minutes. |
+| Email + password | scrypt, per-account salt, throttled to eight attempts per fifteen minutes. |
 | Email code | Six-digit code, hashed in storage, five attempts, ten minutes. |
-| Google / GitHub | OAuth 2.0 authorisation code, exchanged server-side. |
-| Passkey | WebAuthn. Registration and assertion verified against the stored key. |
 | Arc wallet | EIP-191 `personal_sign`; the address is recovered from the signature. |
 | Solana wallet | Ed25519 signature over a server-issued nonce. |
-| No account | Mints a key with no identity attached — the original promise, unchanged. |
 
-A password is optional on any email account: `POST /v1/auth/password/set` adds one to
-an account created by code, wallet or passkey, and a code sign-in always remains as the
-way back in when a password is forgotten or locked out. Nothing stores the password
-itself — only an scrypt digest with a per-account salt.
+There is no OAuth and no passkey path: third-party sign-in was removed along with its
+console setup, its client secrets and its redirect-URI matching. An identity signs
+into one account, and the key *is* the account — nothing else is stored about you.
 
-Login failures answer identically whether the address is registered or not, so the form
-cannot be used to enumerate accounts. Registration does say when an address is already
-taken: the alternative is telling someone their new account exists when it does not,
-then failing them at every login.
+A password is optional on any email account: `POST /v1/auth/password/set` adds one, and
+a code sign-in always remains as the way back in when a password is forgotten or
+locked out. Nothing stores the password itself — only an scrypt digest with a
+per-account salt.
 
-An identity signs into one account. `Attach an email to it` puts an identity on an
-account you already hold the key to: the code proves the address, the key proves the
-account. A method the gateway is not configured for is reported as unavailable with
-the reason, and its button is disabled — nothing ever falls back to accepting anything.
-
-Secrets go in an untracked `.env` beside `dev.py`, loaded before anything reads its
-configuration. A real environment variable always beats the file.
+Login failures answer identically whether the address is registered or not, so the
+form cannot be used to enumerate accounts. Registration does say when an address is
+already taken: the alternative is telling someone their new account exists when it
+does not, then failing them at every login.
 
 ```ini
-ONEROUTER_RP_ID=localhost                 # WebAuthn relying party
 ONEROUTER_ORIGINS=http://localhost:4321
-ONEROUTER_GOOGLE_CLIENT_ID=...
-ONEROUTER_GOOGLE_CLIENT_SECRET=...
-ONEROUTER_GITHUB_CLIENT_ID=...
-ONEROUTER_GITHUB_CLIENT_SECRET=...
 ONEROUTER_SMTP_HOST=...                   # else the code is printed, not sent
-ONEROUTER_OAUTH_REDIRECT_BASE=...         # when behind a proxy or another hostname
 ```
-
-### The OAuth step that is not code
-
-`redirect_uri_mismatch` is the usual way this fails, and no amount of correct code
-fixes it: the URI has to be registered with the provider, byte for byte. The gateway
-prints the exact string at startup and serves it from `GET /v1/auth/methods`:
-
-```
-google:  register this redirect URI exactly —
-         http://127.0.0.1:8080/v1/auth/oauth/google/callback
-```
-
-Paste that into Google Cloud console → *APIs & Services* → *Credentials* → your OAuth
-client → **Authorised redirect URIs**. Add every origin the gateway is reached on;
-`127.0.0.1` and `localhost` are different URIs to Google.
-
-An existing OAuth client usually has URIs registered already, often under another
-framework's convention. Rather than force a console change, the callback path is
-configurable and the common shapes are served as aliases:
-
-```ini
-ONEROUTER_OAUTH_CALLBACK_PATH=/api/auth/{provider}/callback
-```
-
-| Path | |
-|---|---|
-| `/v1/auth/oauth/<provider>/callback` | the default |
-| `/api/auth/<provider>/callback` | alias |
-| `/api/auth/callback/<provider>` | alias, the NextAuth shape |
-
-Set the variable to whichever is registered; all three reach the same handler.
 
 Signature verification lives in `gateway/auth.py` and `gateway/evm.py`, including a
 Keccak-256 implementation — Keccak is not SHA3-256, so hashlib cannot stand in, and
-every EVM address and event topic depends on it. Run the self-test:
+every EVM address depends on it. Run the self-test:
 
 ```bash
 python3 gateway/selftest.py
 ```
 
-It checks that valid signatures verify and, more to the point, that forged signatures,
-replayed challenges, foreign origins and rewound counters are all refused.
+It checks that valid signatures verify and, more to the point, that forged ones and
+signatures from another wallet are refused.
 
 ## Getting a key with no account
 
@@ -351,9 +306,8 @@ right, both covered by `gateway/test_deposits.py`:
 - **A wallet sign-in does not make that wallet the deposit address.** Signing in with
   an Arc wallet proves who you are; deposits still go to the account's own derived
   address, because a deposit has to arrive somewhere the gateway can see and credit.
-- **Passkey attestation is not checked.** Assertions are verified in full; the
-  attestation statement proving *which* authenticator made the key is skipped, which
-  is normal for passkeys but rules out authenticator allow-lists.
+- **No third-party sign-in.** Google, GitHub and passkeys were removed deliberately;
+  the only identities are an email address and a wallet address.
 - **Sessions do not rotate.** A session token is valid for thirty days or until sign-out.
 - **`/v1/responses` answers `400 unsupported_endpoint`.** Chat Completions and
   Anthropic Messages are both live; Responses is not. The docs and every model page say
