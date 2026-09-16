@@ -1,28 +1,45 @@
 #!/usr/bin/env python3
-"""Build the site against a local gateway, then run both.
+"""Run every part of the project.
 
     python3 dev.py
 
-Site on :4321, gateway on :8080. The build is pointed at the local gateway, so every
-base URL on the site — the chat playground, the key page, every code snippet — refers
-to the gateway this script starts. Ctrl-C stops both.
+Three processes, because the frontend is mid-migration:
 
-For a production build, run `python3 site/build.py` on its own: with ONEROUTER_API
-unset the base URL comes from docs/_nav.json.
+    :4322  web/      Next.js — home, models, chat, signin, keys, pay
+    :4321  public/   the Python build — docs, legal, llms.txt, sitemap
+    :8080  gateway/  the API both frontends talk to
+
+The Python site is still the only thing that renders the documentation, so it runs
+alongside Next until the Markdown subset and its directives are ported. Both read the
+same data/*.json and the same gateway, so what they show agrees.
+
+Ctrl-C stops all three. For a production build of the site alone, run
+`python3 site/build.py` with ONEROUTER_API unset.
 """
 
 import os
+import shutil
 import signal
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+WEB = ROOT / "web"
 SITE_PORT = int(os.environ.get("SITE_PORT", 4321))
+WEB_PORT = int(os.environ.get("WEB_PORT", 4322))
 GATEWAY_PORT = int(os.environ.get("GATEWAY_PORT", 8080))
-# localhost rather than the IP: OAuth providers treat the two as different
-# redirect URIs, and one spelling everywhere is one thing to register.
 API = f"http://localhost:{GATEWAY_PORT}/v1"
+
+
+def node_bin() -> str | None:
+    """npm, wherever it lives. Node is installed under ~/.local/node here rather than
+    system-wide, so PATH alone is not enough to find it."""
+    found = shutil.which("npm")
+    if found:
+        return found
+    local = Path.home() / ".local" / "node" / "bin" / "npm"
+    return str(local) if local.exists() else None
 
 
 def main() -> int:
@@ -35,17 +52,30 @@ def main() -> int:
         subprocess.Popen([sys.executable, "gateway/server.py", str(GATEWAY_PORT)], cwd=ROOT),
         subprocess.Popen([sys.executable, "serve.py", str(SITE_PORT)], cwd=ROOT),
     ]
-    print(f"\n  site     http://localhost:{SITE_PORT}")
-    print(f"  gateway  {API}")
-    print("  Ctrl-C to stop both.\n")
+
+    npm = node_bin()
+    if npm and (WEB / "node_modules").exists():
+        procs.append(subprocess.Popen(
+            [npm, "run", "dev"], cwd=WEB,
+            env={**os.environ,
+                 "PATH": f"{Path(npm).parent}:{os.environ.get('PATH', '')}",
+                 "NEXT_PUBLIC_GATEWAY_URL": API}))
+    else:
+        print("\n  web/: skipped — no npm, or run `npm install` in web/ first")
+
+    print(f"\n  web (Next)  http://localhost:{WEB_PORT}")
+    print(f"  docs (site) http://localhost:{SITE_PORT}/docs/quickstart")
+    print(f"  gateway     {API}")
+    print("  Ctrl-C to stop all of them.\n")
 
     def stop(*_):
-        for p in procs:
-            p.terminate()
+        for proc in procs:
+            proc.terminate()
+
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
-    for p in procs:
-        p.wait()
+    for proc in procs:
+        proc.wait()
     return 0
 
 
