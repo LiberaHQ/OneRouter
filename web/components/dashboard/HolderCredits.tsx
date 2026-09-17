@@ -6,23 +6,71 @@ import { principal } from "@/lib/api/tokens";
 import type { HolderCreditStatus } from "@/lib/api/types";
 import { ApiError } from "@/lib/api/types";
 
+const ARC_CHAIN = {
+  chainId: "0x13b2",
+  chainName: "Arc",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: ["https://rpc.mainnet.arc.io"],
+  blockExplorerUrls: ["https://explorer.arc.io"],
+};
+
 export function HolderCredits() {
   const [status, setStatus] = useState<HolderCreditStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(true);
   const [notice, setNotice] = useState<string | null>(null);
+  const [hasEthereum, setHasEthereum] = useState(false);
 
   useEffect(() => {
+    setHasEthereum(typeof window !== "undefined" && !!(window as any).ethereum);
+  }, []);
+
+  function refresh() {
     const token = principal();
     if (!token) {
-      const timeout = window.setTimeout(() => setBusy(false), 0);
-      return () => window.clearTimeout(timeout);
+      setBusy(false);
+      return;
     }
+    setBusy(true);
     api.holderCredit(token)
       .then(setStatus)
       .catch((reason: unknown) => setError(messageFor(reason)))
       .finally(() => setBusy(false));
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function connectWallet() {
+    const token = principal();
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const eth = (window as any).ethereum;
+      const accounts: string[] = await eth.request({ method: "eth_requestAccounts" });
+      const address = accounts[0];
+      try {
+        await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_CHAIN.chainId }] });
+      } catch {
+        try {
+          await eth.request({ method: "wallet_addEthereumChain", params: [ARC_CHAIN] });
+        } catch {
+          // proceed anyway — the signature itself doesn't require the chain switch to succeed
+        }
+      }
+      const { ref, message } = await api.walletChallenge("arc", address);
+      const signature: string = await eth.request({ method: "personal_sign", params: [message, address] });
+      await api.walletLink(token, ref, signature);
+      refresh();
+    } catch (reason) {
+      setError(messageFor(reason));
+      setBusy(false);
+    }
+  }
 
   async function claim() {
     const token = principal();
@@ -43,6 +91,8 @@ export function HolderCredits() {
     }
   }
 
+  const alreadyClaimed = !!status && status.entitlement_usd > 0 && status.claimable_usd <= 0;
+
   return (
     <section className="holder-benefit" aria-labelledby="holder-benefit-title">
       <div className="holder-benefit-head">
@@ -55,7 +105,7 @@ export function HolderCredits() {
 
       {busy && !status && <p className="panel-note">Checking your verified Arc wallet…</p>}
       {!busy && !status && !error && (
-        <p className="panel-note">Sign in with an Arc wallet to check and claim DUKE holder credit.</p>
+        <p className="panel-note">Sign in to check and claim DUKE holder credit.</p>
       )}
       {error && <p className="auth-status bad">{error}</p>}
 
@@ -71,9 +121,24 @@ export function HolderCredits() {
               <p>{status.reason ?? tierCopy(status)}</p>
               {status.wallet && <code>{shortAddress(status.wallet)}</code>}
             </div>
-            <button className="btn primary" type="button" disabled={busy || status.claimable_usd <= 0} onClick={claim}>
-              {busy ? "Checking…" : status.claimable_usd > 0 ? "Claim credit" : "Claimed"}
-            </button>
+            {!status.wallet ? (
+              hasEthereum ? (
+                <button className="btn primary" type="button" disabled={busy} onClick={connectWallet}>
+                  {busy ? "Connecting…" : "Connect Arc wallet"}
+                </button>
+              ) : (
+                <span className="panel-note">No wallet extension detected in this browser.</span>
+              )
+            ) : (
+              <button
+                className="btn primary"
+                type="button"
+                disabled={busy || status.claimable_usd <= 0}
+                onClick={claim}
+              >
+                {busy ? "Checking…" : status.claimable_usd > 0 ? "Claim credit" : alreadyClaimed ? "Claimed" : "Not eligible"}
+              </button>
+            )}
           </div>
           {notice && <p className="auth-status ok">{notice}</p>}
         </>

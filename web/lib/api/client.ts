@@ -46,6 +46,12 @@ export const api = {
     method: "POST",
     body: JSON.stringify({ ref, signature }),
   }),
+  walletLink: (token: string, ref: string, signature: string) =>
+    request<{ linked: boolean; chain: string; address: string; identities: string[] }>("/v1/auth/wallet/link", {
+      method: "POST",
+      headers: authHeaders(token),
+      body: JSON.stringify({ ref, signature }),
+    }),
 
   session: (token: string) => request<SessionInfo>("/v1/auth/session", { headers: authHeaders(token) }),
   signout: (token: string) => request<{ signed_out: boolean }>("/v1/auth/signout", { method: "POST", headers: authHeaders(token) }),
