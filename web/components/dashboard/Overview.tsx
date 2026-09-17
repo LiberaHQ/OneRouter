@@ -7,6 +7,7 @@ import { getKey, principal, setKey as rememberKey } from "@/lib/api/tokens";
 import { CopyButton } from "@/components/chrome/CopyButton";
 import { formatUsd } from "@/lib/format";
 import type { SessionInfo } from "@/lib/api/types";
+import { HolderCredits } from "@/components/dashboard/HolderCredits";
 
 export function Overview({ apiUrl, brand }: { apiUrl: string; brand: string }) {
   const [key, setKey] = useState<string | null>(null);
@@ -87,6 +88,8 @@ export function Overview({ apiUrl, brand }: { apiUrl: string; brand: string }) {
           </div>
         </div>
       </div>
+
+      <HolderCredits />
 
       <h2 className="sec">Finish setup</h2>
       <div className="dash-progress-label">

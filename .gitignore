@@ -2,5 +2,12 @@
 .env
 .env.local
 
-# The Next.js app (web/) has its own .gitignore for node_modules, .next, gateway
-# state, etc.
+# This repo's app is entirely under web/, which has its own .gitignore for
+# node_modules, .next, and gateway state. These top-level paths are leftovers from
+# before this branch existed (the pre-rewrite Python gateway and generated static
+# site) and were never part of this branch's tracked tree — excluded here so a
+# broad `git add` can't pull a stray copy back in.
+/node_modules
+/gateway
+/public
+/.next

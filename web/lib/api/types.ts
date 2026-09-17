@@ -40,6 +40,33 @@ export interface MeInfo {
   created: number;
 }
 
+export interface HolderTier {
+  minimum_tokens: string;
+  credit_usd: number;
+}
+
+export interface HolderCreditStatus {
+  eligible: boolean;
+  reason: string | null;
+  period: string;
+  wallet: string | null;
+  token: string;
+  symbol: string;
+  decimals: number;
+  total_supply: string;
+  token_balance: string;
+  entitlement_usd: number;
+  claimed_usd: number;
+  claimable_usd: number;
+  current_tier: HolderTier | null;
+  next_tier: HolderTier | null;
+}
+
+export interface HolderCreditClaim extends HolderCreditStatus {
+  credited_usd: number;
+  balance_usd: number;
+}
+
 export interface PayMethods {
   arc: {
     ready: boolean;

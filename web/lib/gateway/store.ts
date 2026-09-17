@@ -49,6 +49,16 @@ export interface Account {
   owed_treasury?: number;
 }
 
+interface HolderClaim {
+  account: string;
+  wallet: string;
+  token: string;
+  period: string;
+  credited_usd: number;
+  token_balance: string;
+  updated: number;
+}
+
 interface State {
   accounts: Record<string, Account>;
   index: Record<string, string>;
@@ -61,6 +71,7 @@ interface State {
   arc_seed?: string;
   arc_seed_generated?: number;
   sweeps?: { account: string; usd: number; tx: string; at: number }[];
+  holder_claims: Record<string, HolderClaim>;
 }
 
 function blank(): State {
@@ -73,6 +84,7 @@ function blank(): State {
     pending: {},
     deposits: {},
     throttle: {},
+    holder_claims: {},
   };
 }
 
@@ -83,7 +95,7 @@ function loadState(): State {
     const state = JSON.parse(blob) as State;
     const defaults = blank();
     for (const key of Object.keys(defaults) as Array<keyof State>) {
-      if (state[key] === undefined) (state as any)[key] = defaults[key];
+      if (state[key] === undefined) Object.assign(state, { [key]: defaults[key] });
     }
     return state;
   } catch {
@@ -318,6 +330,44 @@ export class Store {
     });
   }
 
+  holderClaim(wallet: string, token: string, period: string): HolderClaim | null {
+    this.refresh();
+    return this.state.holder_claims[holderClaimKey(wallet, token, period)] ?? null;
+  }
+
+  async applyHolderCredit(
+    acctId: string,
+    wallet: string,
+    token: string,
+    period: string,
+    entitlementUsd: number,
+    tokenBalance: string
+  ): Promise<{ credited_usd: number; claimed_usd: number; balance_usd: number }> {
+    return withLock(() => {
+      this.refresh();
+      const acct = this.accountById(acctId);
+      if (!acct) throw new Error("account no longer exists");
+      const key = holderClaimKey(wallet, token, period);
+      const previous = this.state.holder_claims[key];
+      if (previous && previous.account !== acct.id) throw new Error("wallet benefit already belongs to another account");
+      const claimed = previous?.credited_usd ?? 0;
+      const credited = round6(Math.max(0, entitlementUsd - claimed));
+      if (credited > 0) acct.balance_usd = round6(acct.balance_usd + credited);
+      const claimedTotal = round6(claimed + credited);
+      this.state.holder_claims[key] = {
+        account: acct.id,
+        wallet: wallet.toLowerCase(),
+        token: token.toLowerCase(),
+        period,
+        credited_usd: claimedTotal,
+        token_balance: tokenBalance,
+        updated: Math.floor(Date.now() / 1000),
+      };
+      saveState(this.state);
+      return { credited_usd: credited, claimed_usd: claimedTotal, balance_usd: acct.balance_usd };
+    });
+  }
+
   private expireSessions(): void {
     const now = Date.now() / 1000;
     for (const key of Object.keys(this.state.sessions)) {
@@ -496,6 +546,10 @@ export class Store {
 
 function round6(n: number): number {
   return Math.round(n * 1e6) / 1e6;
+}
+
+function holderClaimKey(wallet: string, token: string, period: string): string {
+  return `${token.toLowerCase()}:${period}:${wallet.toLowerCase()}`;
 }
 
 export const STORE = new Store();

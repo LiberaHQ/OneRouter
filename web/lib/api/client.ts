@@ -1,6 +1,6 @@
 "use client";
 
-import { ApiError, type ApiErrorBody, type AuthMethods, type Deposit, type MeInfo, type PayMethods, type SessionInfo, type SignedIn } from "./types";
+import { ApiError, type ApiErrorBody, type AuthMethods, type Deposit, type HolderCreditClaim, type HolderCreditStatus, type MeInfo, type PayMethods, type SessionInfo, type SignedIn } from "./types";
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
@@ -51,6 +51,11 @@ export const api = {
   signout: (token: string) => request<{ signed_out: boolean }>("/v1/auth/signout", { method: "POST", headers: authHeaders(token) }),
 
   me: (key: string) => request<MeInfo>("/v1/me", { headers: authHeaders(key) }),
+  holderCredit: (token: string) => request<HolderCreditStatus>("/v1/me/holder-credit", { headers: authHeaders(token) }),
+  claimHolderCredit: (token: string) => request<HolderCreditClaim>("/v1/me/holder-credit", {
+    method: "POST",
+    headers: authHeaders(token),
+  }),
 
   mintKey: (bearer?: string) => request<{ key: string; account: string; balance_usd: number; recovery_url?: string }>("/v1/keys", {
     method: "POST",
