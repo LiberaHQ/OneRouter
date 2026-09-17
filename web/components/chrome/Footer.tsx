@@ -21,6 +21,7 @@ const FOOTER_COLS: Array<[string, Array<[string, string]>]> = [
       ["Budgets", "/docs/budgets"],
       ["Failover", "/docs/failover"],
       ["Billing", "/docs/billing"],
+      ["DUKE holder credit", "/docs/duke-holder-credit"],
       ["Data handling", "/docs/privacy"],
     ],
   ],

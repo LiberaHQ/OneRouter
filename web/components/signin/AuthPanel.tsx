@@ -145,12 +145,10 @@ function WalletPanel({
   setStatus: (s: { text: string; bad?: boolean } | null) => void;
 }) {
   const [hasEthereum, setHasEthereum] = useState(false);
-  const [hasSolana, setHasSolana] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setHasEthereum(typeof window !== "undefined" && !!(window as any).ethereum);
-    setHasSolana(typeof window !== "undefined" && !!(window as any).solana?.isPhantom);
   }, []);
 
   const ARC_CHAIN = {
@@ -188,27 +186,6 @@ function WalletPanel({
     }
   }
 
-  async function connectSolana() {
-    setBusy(true);
-    setStatus(null);
-    try {
-      const sol = (window as any).solana;
-      const resp = await sol.connect();
-      const address: string = resp.publicKey.toString();
-      const { ref, message } = await api.walletChallenge("solana", address);
-      const encoded = new TextEncoder().encode(message);
-      const signed = await sol.signMessage(encoded, "utf8");
-      const sigBytes: Uint8Array = signed.signature ?? signed;
-      const signature = Buffer.from(sigBytes).toString("base64url");
-      const data = await api.walletVerify(ref, signature);
-      onSignedIn(data);
-    } catch (err) {
-      onError(err);
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="auth-panel">
       <h2>Continue with a wallet</h2>
@@ -219,12 +196,7 @@ function WalletPanel({
             Connect Arc wallet
           </button>
         )}
-        {hasSolana && (
-          <button className="btn primary" disabled={busy} onClick={connectSolana}>
-            Connect Solana wallet
-          </button>
-        )}
-        {!hasEthereum && !hasSolana && <p className="auth-status bad">No wallet extension detected in this browser.</p>}
+        {!hasEthereum && <p className="auth-status bad">No wallet extension detected in this browser.</p>}
       </div>
     </div>
   );

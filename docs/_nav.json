@@ -6,7 +6,7 @@
   "groups": [
     { "label": "Start here", "pages": ["quickstart", "open-tier", "authentication"] },
     { "label": "Build",      "pages": ["models", "streaming", "errors"] },
-    { "label": "Operate",    "pages": ["budgets", "failover", "billing", "privacy"] },
+    { "label": "Operate",    "pages": ["budgets", "failover", "billing", "duke-holder-credit", "privacy"] },
     { "label": "Resources",  "pages": ["agent-resources", "integrations"] }
   ]
 }

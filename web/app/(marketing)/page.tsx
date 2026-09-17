@@ -4,6 +4,7 @@ import { money } from "@/lib/content/format";
 import { heroTabs } from "@/lib/content/snippets";
 import { codeBlock } from "@/lib/markdown/codeBlock";
 import { BRAND } from "@/lib/content/nav";
+import { HOLDER_TIERS } from "@/lib/gateway/holderCredits";
 
 export const metadata: Metadata = {
   title: `${BRAND} — one key for every model, no account`,
@@ -154,6 +155,38 @@ export default function HomePage() {
             <code>base URL + key → client</code>
           </div>
         </div>
+      </section>
+
+      <section className="band tight">
+        <div className="band-head">
+          <h2>Hold DUKE, get monthly credit.</h2>
+          <p>
+            Link an Arc wallet and your DUKE balance is checked live on-chain — no snapshot date, no
+            staking contract.
+          </p>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>DUKE held</th>
+                <th className="num">Monthly credit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {HOLDER_TIERS.map((tier) => (
+                <tr key={tier.minimum.toString()}>
+                  <td>{tier.minimum.toLocaleString()}</td>
+                  <td className="num">{money(tier.creditUsd)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="note">
+          Credit lands as ordinary prepaid balance, once a month, for whichever tier your wallet clears.{" "}
+          <a href="/docs/duke-holder-credit">How the check works →</a>
+        </p>
       </section>
 
       <section className="band tight">
