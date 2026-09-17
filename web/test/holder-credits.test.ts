@@ -3,7 +3,7 @@ import { entitlementFor } from "../lib/gateway/holderCredits";
 
 const UNIT = 10n ** 18n;
 
-describe("DUKE holder credit tiers", () => {
+describe("ONE holder credit tiers", () => {
   it.each([
     [999n, 0],
     [1_000n, 0.5],

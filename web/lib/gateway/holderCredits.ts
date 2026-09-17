@@ -2,6 +2,8 @@ import { createPublicClient, erc20Abi, formatUnits, http, isAddress, type Addres
 import type { Account } from "./store";
 import * as arc from "./arc";
 
+// Placeholder address — the ticker is ONE, but this contract address is a stand-in
+// until the real one is set via ONEROUTER_HOLDER_TOKEN.
 export const HOLDER_TOKEN = (process.env.ONEROUTER_HOLDER_TOKEN ||
   "0x41358Defd0dedc90528b3F1835715E907B686e6a") as Address;
 
@@ -90,11 +92,11 @@ export async function holderSnapshot(acct: Account, claimedUsd = 0): Promise<Hol
   if (!wallet) {
     return {
       eligible: false,
-      reason: "Sign in with an Arc wallet to verify your DUKE holdings.",
+      reason: "Sign in with an Arc wallet to verify your ONE holdings.",
       period,
       wallet: null,
       token: HOLDER_TOKEN,
-      symbol: "DUKE",
+      symbol: "ONE",
       decimals: 18,
       total_supply: "1000000000",
       token_balance: "0",

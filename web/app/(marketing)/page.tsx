@@ -159,9 +159,9 @@ export default function HomePage() {
 
       <section className="band tight">
         <div className="band-head">
-          <h2>Hold DUKE, get monthly credit.</h2>
+          <h2>Hold ONE, get monthly credit.</h2>
           <p>
-            Link an Arc wallet and your DUKE balance is checked live on-chain — no snapshot date, no
+            Link an Arc wallet and your ONE balance is checked live on-chain — no snapshot date, no
             staking contract.
           </p>
         </div>
@@ -169,7 +169,7 @@ export default function HomePage() {
           <table>
             <thead>
               <tr>
-                <th>DUKE held</th>
+                <th>ONE held</th>
                 <th className="num">Monthly credit</th>
               </tr>
             </thead>
@@ -185,7 +185,7 @@ export default function HomePage() {
         </div>
         <p className="note">
           Credit lands as ordinary prepaid balance, once a month, for whichever tier your wallet clears.{" "}
-          <a href="/docs/duke-holder-credit">How the check works →</a>
+          <a href="/docs/one-holder-credit">How the check works →</a>
         </p>
       </section>
 

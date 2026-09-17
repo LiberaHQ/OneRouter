@@ -97,7 +97,7 @@ export function HolderCredits() {
     <section className="holder-benefit" aria-labelledby="holder-benefit-title">
       <div className="holder-benefit-head">
         <div>
-          <span className="eyebrow">DUKE holder benefit</span>
+          <span className="eyebrow">ONE holder benefit</span>
           <h2 id="holder-benefit-title">Monthly API credit</h2>
         </div>
         <span className="holder-period">{status?.period ?? "This month"}</span>
@@ -105,7 +105,7 @@ export function HolderCredits() {
 
       {busy && !status && <p className="panel-note">Checking your verified Arc wallet…</p>}
       {!busy && !status && !error && (
-        <p className="panel-note">Sign in to check and claim DUKE holder credit.</p>
+        <p className="panel-note">Sign in to check and claim ONE holder credit.</p>
       )}
       {error && <p className="auth-status bad">{error}</p>}
 
@@ -164,5 +164,5 @@ function shortAddress(address: string): string {
 }
 
 function messageFor(reason: unknown): string {
-  return reason instanceof ApiError ? reason.message : "Could not check DUKE holdings. Try again.";
+  return reason instanceof ApiError ? reason.message : "Could not check ONE holdings. Try again.";
 }

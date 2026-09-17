@@ -98,14 +98,14 @@ export default function PricingPage() {
 
       <section className="band tight">
         <div className="band-head">
-          <h2>A third way to lower the bill: hold DUKE.</h2>
+          <h2>A third way to lower the bill: hold ONE.</h2>
           <p>
             Link an Arc wallet on your dashboard and a live on-chain balance check credits your account
-            monthly — from $0.50 at 1,000 DUKE up to $40 at 10,000,000.
+            monthly — from $0.50 at 1,000 ONE up to $40 at 10,000,000.
           </p>
         </div>
         <div className="hero-cta">
-          <a className="btn lg" href="/docs/duke-holder-credit">
+          <a className="btn lg" href="/docs/one-holder-credit">
             See the tiers →
           </a>
         </div>

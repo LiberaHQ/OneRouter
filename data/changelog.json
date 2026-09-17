@@ -1,8 +1,8 @@
 [
  {"month":"September 2026","items":[
-  {"date":"2026-09-17","tag":"Operate","title":"DUKE holders get a monthly balance credit.",
-   "body":"Link an Arc wallet from the dashboard and a live on-chain balance check credits your account each month — from $0.50 at 1,000 DUKE up to $40 at 10,000,000. No snapshot date, no staking contract.",
-   "link":["Read about DUKE credit","/docs/duke-holder-credit"]},
+  {"date":"2026-09-17","tag":"Operate","title":"ONE holders get a monthly balance credit.",
+   "body":"Link an Arc wallet from the dashboard and a live on-chain balance check credits your account each month — from $0.50 at 1,000 ONE up to $40 at 10,000,000. No snapshot date, no staking contract.",
+   "link":["Read about ONE credit","/docs/one-holder-credit"]},
   {"date":"2026-09-09","tag":"Docs","title":"Documentation is generated from the gateway's own catalog.",
    "body":"The errors page is built from the same error catalog the gateway serves, so a code cannot exist in one and not the other. Every page is also available as Markdown and in one combined corpus for agents.",
    "link":["Read the errors page","/docs/errors"]},

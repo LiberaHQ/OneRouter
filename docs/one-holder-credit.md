@@ -1,17 +1,17 @@
 ---
-title: DUKE holder credit
-nav: DUKE credit
+title: ONE holder credit
+nav: ONE credit
 kicker: Operate
-description: A monthly balance credit for accounts that link an Arc wallet holding DUKE. Checked live on-chain, no snapshot to game.
+description: A monthly balance credit for accounts that link an Arc wallet holding ONE. Checked live on-chain, no snapshot to game.
 ---
 
-Holding DUKE on Arc is worth a monthly credit toward your OneRouter balance. There is
+Holding ONE on Arc is worth a monthly credit toward your OneRouter balance. There is
 no snapshot date to time and no staking contract to lock into — the credit is read
 from your wallet's live balance each time you check or claim.
 
 ## Tiers
 
-| DUKE held | Monthly credit |
+| ONE held | Monthly credit |
 |---|---|
 | 1,000 | $0.50 |
 | 10,000 | $2.00 |
@@ -26,7 +26,7 @@ tiers, no reward for holding above the top row beyond the top row's credit.
 
 ::steps
 1. Sign in (or create a key) at [`/keys`](/keys).
-2. Open your [dashboard](/dashboard) and find the DUKE holder benefit card.
+2. Open your [dashboard](/dashboard) and find the ONE holder benefit card.
 3. Connect an Arc wallet. A signature proves you hold it — it authorises nothing
    else, no transaction, no transfer, no spend.
 4. If your balance clears a tier, claim the month's credit.
@@ -40,7 +40,7 @@ refused rather than merging the two.
 
 ## How the check works
 
-`GET /v1/me/holder-credit` reads your linked wallet's DUKE balance directly from
+`GET /v1/me/holder-credit` reads your linked wallet's ONE balance directly from
 Arc via `balanceOf` — not a cached snapshot — and reports the tier it clears, this
 month's entitlement, and how much of it is still unclaimed.
 
@@ -63,7 +63,7 @@ curl -X POST {{API}}/me/holder-credit \
 | Reason | Meaning |
 |---|---|
 | No wallet linked | Connect an Arc wallet from the dashboard first. |
-| Balance under the first tier | Hold at least 1,000 DUKE to qualify. |
+| Balance under the first tier | Hold at least 1,000 ONE to qualify. |
 | Nothing claimable | This month's credit for your tier is already claimed. |
 
 Credit lands as ordinary prepaid balance — the same balance every request draws

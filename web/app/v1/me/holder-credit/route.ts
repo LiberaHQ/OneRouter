@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   try {
     return Response.json(await holderSnapshot(acct, claimed));
   } catch {
-    return jsonErrorWithMessage("upstream_error", "Arc could not read the DUKE balance. Try again shortly.");
+    return jsonErrorWithMessage("upstream_error", "Arc could not read the ONE balance. Try again shortly.");
   }
 }
 
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     const claimed = wallet ? STORE.holderClaim(wallet, HOLDER_TOKEN, period)?.credited_usd ?? 0 : 0;
     snapshot = await holderSnapshot(acct, claimed);
   } catch {
-    return jsonErrorWithMessage("upstream_error", "Arc could not read the DUKE balance. Try again shortly.");
+    return jsonErrorWithMessage("upstream_error", "Arc could not read the ONE balance. Try again shortly.");
   }
   if (!snapshot.wallet) return jsonErrorWithMessage("invalid_request", snapshot.reason ?? "An Arc wallet is required.");
   if (snapshot.claimable_usd <= 0) {
