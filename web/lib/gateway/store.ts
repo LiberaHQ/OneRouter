@@ -1,8 +1,8 @@
-// Keys, balances and usage accounting. Ported from gateway/core.py. One JSON file
-// holds the lot — secrets are stored as SHA-256 digests, never in the clear.
-import fs from "node:fs";
+// Keys, balances and usage accounting. Ported from gateway/core.py. One row in
+// SQLite holds the lot (see db.ts) — secrets are stored as SHA-256 digests, never in
+// the clear.
 import { createHash, randomBytes, timingSafeEqual, scryptSync } from "node:crypto";
-import { GATEWAY_STATE_PATH } from "../content/paths";
+import { loadStateBlob, saveStateBlob } from "./db";
 import type { Deposit } from "./arc";
 
 export const FREE_REQUESTS_PER_DAY = 50;
@@ -42,6 +42,9 @@ export interface Account {
   identities: string[];
   arc_address?: string;
   password?: PasswordRecord;
+  // Charged but not yet settled to the treasury address on-chain — accumulates in
+  // charge(), drained (in full or in part — see treasury.ts) by a sweep.
+  owed_treasury?: number;
 }
 
 interface State {
@@ -55,6 +58,7 @@ interface State {
   throttle: Record<string, { count: number; until: number }>;
   arc_seed?: string;
   arc_seed_generated?: number;
+  sweeps?: { account: string; usd: number; tx: string; at: number }[];
 }
 
 function blank(): State {
@@ -71,9 +75,10 @@ function blank(): State {
 }
 
 function loadState(): State {
-  if (!fs.existsSync(GATEWAY_STATE_PATH)) return blank();
+  const blob = loadStateBlob();
+  if (!blob) return blank();
   try {
-    const state = JSON.parse(fs.readFileSync(GATEWAY_STATE_PATH, "utf-8")) as State;
+    const state = JSON.parse(blob) as State;
     const defaults = blank();
     for (const key of Object.keys(defaults) as Array<keyof State>) {
       if (state[key] === undefined) (state as any)[key] = defaults[key];
@@ -86,11 +91,7 @@ function loadState(): State {
 }
 
 function saveState(state: State): void {
-  const dir = GATEWAY_STATE_PATH.slice(0, GATEWAY_STATE_PATH.lastIndexOf("/"));
-  fs.mkdirSync(dir, { recursive: true });
-  const tmp = GATEWAY_STATE_PATH + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
-  fs.renameSync(tmp, GATEWAY_STATE_PATH);
+  saveStateBlob(JSON.stringify(state));
 }
 
 // Serialises every read-modify-write. Node's single-threaded JS execution means this
@@ -170,6 +171,22 @@ export class Store {
     });
   }
 
+  /** Same replacement as `rotate`, but for a caller already authenticated by session
+   * or an existing key rather than the recovery secret — the device has no local key
+   * (a returning Google/wallet sign-in never gets the original one back) but is still
+   * provably this account, so it can be issued a fresh one for itself. The recovery
+   * secret is left untouched, exactly like `rotate`. */
+  async issueKeyFor(acct: Account): Promise<{ key: string; account: string; balance_usd: number }> {
+    return withLock(() => {
+      delete this.state.index[acct.key_hash];
+      const key = "or-live-" + randomHex(16);
+      acct.key_hash = digest(key);
+      this.state.index[digest(key)] = acct.id;
+      saveState(this.state);
+      return { key, account: acct.id, balance_usd: acct.balance_usd };
+    });
+  }
+
   async credit(acct: Account, amount: number): Promise<Account> {
     return withLock(() => {
       acct.balance_usd = round6(acct.balance_usd + amount);
@@ -183,6 +200,7 @@ export class Store {
     await withLock(() => {
       acct.balance_usd = round6(Math.max(0, acct.balance_usd - cost));
       acct.spent_usd = round6(acct.spent_usd + cost);
+      acct.owed_treasury = round6((acct.owed_treasury ?? 0) + cost);
       acct.requests += 1;
       this.state.receipts.push(receipt);
       // The receipt log is a demo convenience, not an audit trail — cap it so a
@@ -190,6 +208,25 @@ export class Store {
       if (this.state.receipts.length > 500) {
         this.state.receipts = this.state.receipts.slice(-500);
       }
+      saveState(this.state);
+    });
+  }
+
+  /** Every account currently owing at least `minUsd` to the treasury — the sweep's
+   * worklist. */
+  accountsOwingTreasury(minUsd: number): Account[] {
+    return Object.values(this.state.accounts).filter((a) => !a.revoked && (a.owed_treasury ?? 0) >= minUsd);
+  }
+
+  /** Records what a sweep actually moved and clears the corresponding ledger amount.
+   * `sweptUsd` may be less than what was owed (a partial sweep, capped by on-chain
+   * balance or gas) — only that much is drained, and the rest stays owed. */
+  async recordSweep(acct: Account, sweptUsd: number, tx: string): Promise<void> {
+    await withLock(() => {
+      acct.owed_treasury = round6(Math.max(0, (acct.owed_treasury ?? 0) - sweptUsd));
+      this.state.sweeps = this.state.sweeps ?? [];
+      this.state.sweeps.push({ account: acct.id, usd: sweptUsd, tx, at: Math.floor(Date.now() / 1000) });
+      if (this.state.sweeps.length > 500) this.state.sweeps = this.state.sweeps.slice(-500);
       saveState(this.state);
     });
   }

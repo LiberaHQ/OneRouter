@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import * as arc from "../lib/gateway/arc";
 import type { Deposit, Transfer } from "../lib/gateway/arc";
 
@@ -16,6 +16,10 @@ beforeAll(() => {
   arc.chain.headBlock = async () => CHAIN.head;
   arc.chain.incoming = async (_address: string, first: number, last: number) =>
     CHAIN.logs.filter((e) => e.block >= first && e.block <= last);
+  // The native-balance path (below, in its own describe block) is exercised
+  // separately — hold it at zero here so every assertion in this block stays about
+  // the log-based path exactly as it was before that path existed.
+  arc.chain.balanceAt = async () => 0n;
 });
 
 function deposit(first: number): Deposit {
@@ -114,5 +118,67 @@ describe("deposit crediting", () => {
     expect(d2.seen!.length).toBeLessThanOrEqual(arc.SEEN_LIMIT);
     expect(d2.credited_at_edge!.length).toBeLessThanOrEqual(8);
     expect(d2.cursor).toBeLessThanOrEqual(CHAIN.head);
+  });
+});
+
+// USDC is Arc's native asset: an ordinary wallet send moves native balance directly
+// and never emits the ERC-20 Transfer log the suite above scans for. This is that
+// second path — an address's own balance, since a deposit address only ever receives.
+describe("native-balance deposit crediting", () => {
+  const NATIVE_SCALE = 10n ** BigInt(arc.NATIVE_DECIMALS - arc.DECIMALS);
+  let native: { block: number; wei: bigint }[] = [];
+
+  function nativeUnits(usd: number): bigint {
+    return BigInt(arc.units(usd)) * NATIVE_SCALE;
+  }
+
+  beforeEach(() => {
+    native = [];
+    arc.chain.balanceAt = async (_address: string, blockTag: string) => {
+      const target = blockTag === "latest" ? CHAIN.head : parseInt(blockTag, 16);
+      return native.filter((d) => d.block <= target).reduce((sum, d) => sum + d.wei, 0n);
+    };
+  });
+
+  afterEach(() => {
+    arc.chain.balanceAt = async () => 0n;
+  });
+
+  it("a buried native transfer credits exactly once", async () => {
+    CHAIN.head = 2000;
+    CHAIN.logs = [];
+    native = [{ block: 1995, wei: nativeUnits(1) }];
+    const [d, credited] = await arc.check(deposit(1990));
+    expect(credited).toBe(arc.units(1));
+    expect(d.status).toBe("credited");
+
+    const [, again] = await arc.check(d);
+    expect(again).toBe(0);
+  });
+
+  it("a native transfer at the head is pending until buried", async () => {
+    CHAIN.head = 2000;
+    CHAIN.logs = [];
+    native = [{ block: 2000, wei: nativeUnits(1) }]; // depth 1, needs CONFIRMATIONS (2)
+    let [d, credited] = await arc.check(deposit(1995));
+    expect(credited).toBe(0);
+    expect(d.status).toBe("pending");
+
+    CHAIN.head = 2001; // now depth 2
+    [d, credited] = await arc.check(d);
+    expect(credited).toBe(arc.units(1));
+    expect(d.status).toBe("credited");
+  });
+
+  it("sums with a log-based transfer in the same poll, without double-counting", async () => {
+    CHAIN.head = 2000;
+    CHAIN.logs = [tx(1995, arc.units(5), "0xnat1")];
+    native = [{ block: 1990, wei: nativeUnits(2) }];
+    const [d, credited] = await arc.check(deposit(1985));
+    expect(credited).toBe(arc.units(7));
+    expect(d.received_usd).toBe(7);
+
+    const [, again] = await arc.check(d);
+    expect(again).toBe(0);
   });
 });

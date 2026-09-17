@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
-import { setKey } from "@/lib/api/tokens";
+import { getKey, principal, setKey } from "@/lib/api/tokens";
+import { formatUsd } from "@/lib/format";
 import type { Deposit, PayMethods } from "@/lib/api/types";
 
 const STEP_LABELS = ["Choose", "Copy key", "Send", "Ready"];
@@ -11,6 +12,9 @@ export function KeysFlow() {
   const [step, setStep] = useState(0);
   const [payMethods, setPayMethods] = useState<PayMethods["arc"] | null>(null);
   const [key, setKeyState] = useState<string | null>(null);
+  // Bearer token used for the deposit: the raw key when we have one, else a session
+  // (Google/wallet sign-in). Either authenticates /v1/pay/deposit.
+  const [token, setToken] = useState<string | null>(null);
   const [recoveryUrl, setRecoveryUrl] = useState<string | null>(null);
   const [deposit, setDeposit] = useState<Deposit | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -19,30 +23,25 @@ export function KeysFlow() {
 
   useEffect(() => {
     api.payMethods().then((r) => setPayMethods(r.arc)).catch(() => {});
+    // Reuse whatever this device already has instead of minting a new, unrelated
+    // anonymous account every time this wizard runs — a signed-in account (Google or
+    // wallet) or an existing local key should only ever change when the user
+    // explicitly rotates it.
+    const existingKey = getKey();
+    if (existingKey) {
+      setKeyState(existingKey);
+      setToken(existingKey);
+    } else {
+      const existingToken = principal();
+      if (existingToken) setToken(existingToken);
+    }
   }, []);
 
-  async function mintAndAdvance() {
+  async function openDepositWith(bearer: string) {
     setBusy(true);
     setError(null);
     try {
-      const minted = await api.mintKey();
-      setKeyState(minted.key);
-      setRecoveryUrl(minted.recovery_url);
-      setKey(minted.key);
-      setStep(1);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create a key.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function goToPayment() {
-    if (!key) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const d = await api.openDeposit(key, 20);
+      const d = await api.openDeposit(bearer, 20);
       setDeposit(d);
       setStep(2);
     } catch (err) {
@@ -52,11 +51,41 @@ export function KeysFlow() {
     }
   }
 
+  async function mintAndAdvance() {
+    if (key) {
+      // Already have a key on this device — show it again rather than minting one.
+      setStep(1);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      // With no local key, `token` (a Google/wallet session) tells the gateway to
+      // issue a fresh key for *this same account* instead of minting an unrelated
+      // anonymous one — still a real, visible key, just tied to who is signed in.
+      const minted = await api.mintKey(token ?? undefined);
+      setKeyState(minted.key);
+      setRecoveryUrl(minted.recovery_url ?? null);
+      setKey(minted.key);
+      setToken(minted.key);
+      setStep(1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create a key.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function goToPayment() {
+    if (!token) return;
+    await openDepositWith(token);
+  }
+
   useEffect(() => {
-    if (step !== 2 || !deposit || !key) return;
+    if (step !== 2 || !deposit || !token) return;
     async function tick() {
       try {
-        const d = await api.depositStatus(key!, deposit!.reference);
+        const d = await api.depositStatus(token!, deposit!.reference);
         setDeposit(d);
         if (d.status === "credited") setStep(3);
       } catch {
@@ -237,7 +266,7 @@ export function KeysFlow() {
           </p>
           <h2 className="step-h center">Your key is funded</h2>
           <p className="step-sub center">
-            Balance <b id="final-balance">${deposit.balance_usd?.toFixed(2) ?? "—"}</b>. It never expires.
+            Balance <b id="final-balance">{deposit.balance_usd !== undefined ? formatUsd(deposit.balance_usd) : "—"}</b>. It never expires.
           </p>
           <div className="done-actions">
             <a className="btn primary lg" href="/chat">

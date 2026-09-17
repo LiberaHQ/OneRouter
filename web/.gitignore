@@ -36,8 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
-# gateway state — account balances, session tokens, the Arc master seed every
-# deposit address is derived from
+# gateway state (SQLite) — account balances, session tokens, the Arc master seed
+# every deposit address is derived from. -wal/-shm are WAL-mode side files.
+/data/gateway.db
+/data/gateway.db-wal
+/data/gateway.db-shm
+# legacy JSON store, read once for migration if still present
 /data/gateway-state.json
 /data/gateway-state.json.tmp
 

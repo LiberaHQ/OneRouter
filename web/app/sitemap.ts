@@ -11,7 +11,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/models",
     "/models/auto/free",
     "/pricing",
-    "/status",
     "/keys",
     "/pay",
     "/chat",

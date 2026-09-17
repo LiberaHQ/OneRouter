@@ -52,7 +52,10 @@ export const api = {
 
   me: (key: string) => request<MeInfo>("/v1/me", { headers: authHeaders(key) }),
 
-  mintKey: () => request<{ key: string; account: string; balance_usd: number; recovery_url: string }>("/v1/keys", { method: "POST" }),
+  mintKey: (bearer?: string) => request<{ key: string; account: string; balance_usd: number; recovery_url?: string }>("/v1/keys", {
+    method: "POST",
+    headers: bearer ? authHeaders(bearer) : undefined,
+  }),
   rotateKey: (recovery: string) => request<{ key: string; account: string; balance_usd: number }>("/v1/keys/rotate", {
     method: "POST",
     body: JSON.stringify({ recovery }),

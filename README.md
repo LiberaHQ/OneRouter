@@ -35,9 +35,9 @@ rewrite of an earlier Python implementation (stdlib site generator + stdlib gate
 | `data/*.json` | Model catalog, host status, changelog. Seed data — see `web/scripts/sync-catalog.ts`. |
 | `web/app/` | Next.js App Router: every page, and every `/v1/*` gateway route, as `page.tsx`/`route.ts` files. |
 | `web/lib/markdown/` | The Markdown engine (a deliberately partial subset, not CommonMark) that renders `docs/`/`pages/`. |
-| `web/lib/gateway/` | The gateway: `store.ts` (keys, balances, sessions), `engine.ts` (where completions come from), `completions.ts` (request handling), `evm.ts`/`wallet.ts`/`qr.ts`/`arc.ts` (crypto and Arc/USDC deposits), `auth.ts`/`authRoutes.ts`/`google.ts` (sign-in). |
+| `web/lib/gateway/` | The gateway: `store.ts` (keys, balances, sessions), `db.ts` (the SQLite persistence boundary `store.ts` reads/writes through), `engine.ts` (where completions come from), `completions.ts` (request handling), `evm.ts`/`wallet.ts`/`qr.ts`/`arc.ts` (crypto and Arc/USDC deposits), `auth.ts`/`authRoutes.ts`/`google.ts` (sign-in). |
 | `web/components/` | React components — chrome, docs, catalog, chat, keys, pay, signin. |
-| `web/data/gateway-state.json` | Runtime state: account balances, session tokens, the Arc master seed. Gitignored. |
+| `web/data/gateway.db` | Runtime state (SQLite): account balances, session tokens, the Arc master seed. Gitignored. |
 | `web/public/` | Next's static asset dir (logo, favicon). |
 
 Change a fact in one place and every surface that states it follows. The base URL
@@ -134,8 +134,8 @@ every in-page `#fragment` against real heading/error ids on that page.
 ## The gateway
 
 `web/lib/gateway/` + `web/app/v1/**/route.ts` is a real OpenAI-compatible server. State
-lives in `web/data/gateway-state.json` — secrets are stored as SHA-256 digests, so the
-file never holds a usable key.
+lives in `web/data/gateway.db` (SQLite) — secrets are stored as SHA-256 digests, so the
+database never holds a usable key.
 
 | Endpoint | What it does |
 |---|---|
@@ -261,7 +261,7 @@ about:
 
 - **Any amount credits.** Attribution is by address, so there is no exact figure to
   match and nothing to mis-attribute when a wallet or exchange adjusts the amount.
-- **`data/gateway-state.json` holds no private keys.** Only the seed is secret, and an
+- **`data/gateway.db` holds no private keys.** Only the seed is secret, and an
   address can be re-derived from a backup of the seed alone.
 - **This is custodial.** Whoever holds the seed controls every address it derives.
   Losing it loses every unswept balance.

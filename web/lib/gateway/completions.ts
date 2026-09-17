@@ -5,6 +5,7 @@ import * as core from "./catalog";
 import * as engine from "./engine";
 import { errorBody, errorBodyWithMessage } from "./errors";
 import { STORE, FREE_REQUESTS_PER_DAY, FREE_TOKENS_PER_DAY, FREE_MAX_OUTPUT, type Account } from "./store";
+import { sweepSoon } from "./treasury";
 import { SITE } from "../content/nav";
 import type { Model } from "../content/data";
 import type { Message } from "./engine";
@@ -120,6 +121,9 @@ async function settle(
   };
   await STORE.charge(acct, cost, receipt);
   if (free) await STORE.spendOpenTier(acct, promptTokens + completionTokens);
+  // Non-blocking: the response must never wait on, or fail because of, on-chain
+  // settlement. This only fires once owed_treasury actually crosses the threshold.
+  if (cost > 0) sweepSoon(acct);
   return cost;
 }
 

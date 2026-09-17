@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api/client";
 import { principal } from "@/lib/api/tokens";
+import { formatUsd } from "@/lib/format";
 import type { Deposit, PayMethods } from "@/lib/api/types";
 
 const AMOUNTS = [5, 20, 50, 200];
@@ -209,7 +210,7 @@ function DepositStep({ deposit, onBack }: { deposit: Deposit; onBack: () => void
       )}
 
       <p className="step-note">
-        <b id="pay-balance">{deposit.balance_usd !== undefined ? `Balance $${deposit.balance_usd.toFixed(2)}` : ""}</b>
+        <b id="pay-balance">{deposit.balance_usd !== undefined ? `Balance ${formatUsd(deposit.balance_usd)}` : ""}</b>
       </p>
 
       <details className="help">

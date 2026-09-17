@@ -59,8 +59,7 @@ export default function ProvidersPage() {
       </div>
       <p className="note">
         A model&rsquo;s page names the hosts that can serve it. Pin one with <code>provider.only</code> to
-        refuse failover; see <a href="/docs/failover">failover</a>. Live health is on the{" "}
-        <a href="/status">status page</a>.
+        refuse failover; see <a href="/docs/failover">failover</a>. Host state above is live.
       </p>
     </main>
   );

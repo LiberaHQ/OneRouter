@@ -45,5 +45,5 @@ rotate it — the old one keeps working for 24 hours, so nothing breaks while yo
 | `security@onerouter.dev` | Vulnerability reports. We do not pursue good-faith research. |
 | `abuse@onerouter.dev` | Acceptable-use reports |
 
-Live host health is on the [status page](/status) — check it before reporting an outage;
+Live host health is on the [providers page](/providers) — check it before reporting an outage;
 if a host is already marked down, we already know.

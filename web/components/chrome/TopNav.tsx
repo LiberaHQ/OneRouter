@@ -9,7 +9,6 @@ const TOP_NAV: Array<[string, string]> = [
   ["Docs", "/docs/quickstart"],
   ["Models", "/models"],
   ["Pricing", "/pricing"],
-  ["Status", "/status"],
 ];
 
 export function TopNav({ active = "" }: { active?: string }) {

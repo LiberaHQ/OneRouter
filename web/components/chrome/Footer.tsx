@@ -39,7 +39,6 @@ const FOOTER_COLS: Array<[string, Array<[string, string]>]> = [
       ["Sign in", "/signin"],
       ["Add credit", "/pay"],
       ["Pricing", "/pricing"],
-      ["Status", "/status"],
       ["Changelog", "/changelog"],
       ["Support", "/support"],
     ],

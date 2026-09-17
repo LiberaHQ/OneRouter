@@ -41,8 +41,8 @@
     "type": "api_error",
     "title": "All upstreams unavailable",
     "retryable": true,
-    "message": "All upstream hosts for 'meta-llama/llama-3.3-70b-instruct' are failing right now (we tried 3). Live status: {{SITE}}/status. Working alternatives at this moment: 'deepseek/deepseek-v4-flash', 'mistralai/mistral-nemo'.",
-    "fix": "Retry, or switch to one of the named alternatives. Naming a live alternative inside the error is deliberate: an agent can act on it without a human reading a status page."
+    "message": "All upstream hosts for 'meta-llama/llama-3.3-70b-instruct' are failing right now (we tried 3). Live status: {{SITE}}/providers. Working alternatives at this moment: 'deepseek/deepseek-v4-flash', 'mistralai/mistral-nemo'.",
+    "fix": "Retry, or switch to one of the named alternatives. Naming a live alternative inside the error is deliberate: an agent can act on it without a human reading the providers page."
   },
   {
     "code": "auto_unresolvable",
@@ -113,7 +113,7 @@
     "type": "api_error",
     "title": "Upstream error",
     "retryable": true,
-    "message": "The upstream returned an error after we had begun streaming, so we could not move to another host without corrupting the response. Live status: {{SITE}}/status",
+    "message": "The upstream returned an error after we had begun streaming, so we could not move to another host without corrupting the response. Live status: {{SITE}}/providers",
     "fix": "Retry the request. If output had barely started \u2014 under 50 tokens \u2014 the charge is written off automatically rather than billed for a response you cannot use."
   },
   {
@@ -122,7 +122,7 @@
     "type": "api_error",
     "title": "Request timed out",
     "retryable": true,
-    "message": "No first token from any upstream within 30s, across 3 hosts. Live status: {{SITE}}/status",
+    "message": "No first token from any upstream within 30s, across 3 hosts. Live status: {{SITE}}/providers",
     "fix": "Retry. Before the first byte reaches you we can and do switch hosts automatically; after it, we cannot."
   },
   {

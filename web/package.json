@@ -9,19 +9,23 @@
     "lint": "eslint",
     "test": "vitest run",
     "linkcheck": "tsx scripts/linkcheck.ts",
-    "sync-catalog": "tsx scripts/sync-catalog.ts"
+    "sync-catalog": "tsx scripts/sync-catalog.ts",
+    "sweep-treasury": "node --env-file=.env.local --import tsx scripts/sweep-treasury.ts"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",
+    "better-sqlite3": "^12.11.1",
     "jsqr": "^1.4.0",
     "next": "16.3.5",
     "nodemailer": "^10.0.10",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "viem": "^2.56.6"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/nodemailer": "^8.0.2",
     "@types/qrcode": "^1.5.6",

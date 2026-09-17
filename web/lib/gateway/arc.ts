@@ -1,6 +1,15 @@
 // USDC deposits on Arc. Ported from gateway/arc.py — see that file's docstring for the
 // decimals trap (18-dp EVM native units vs 6-dp USDC precompile units; everything here
 // stays in the 6-dp precompile units read from Transfer logs).
+//
+// USDC is Arc's *native* asset (the payment help text says so: "send it as an ordinary
+// transfer; no token approval and no contract call is needed"). An ordinary native
+// transfer moves balance directly and never emits an ERC-20 Transfer log at all — only
+// an actual call into the precompile contract does. So Transfer-log scanning alone
+// misses the exact path the product tells people to use. A deposit address is
+// single-purpose and receive-only (nothing ever spends from it), so its own native
+// balance is a second, simpler ground truth: `nativeCredited` below tracks it
+// alongside the log scan, and the two are summed without overlap.
 import { randomBytes } from "node:crypto";
 import { TRANSFER_TOPIC, toChecksum } from "./evm";
 
@@ -8,6 +17,7 @@ export const RPC = process.env.ONEROUTER_ARC_RPC || "https://rpc.mainnet.arc.io"
 export const CHAIN_ID = Number(process.env.ONEROUTER_ARC_CHAIN_ID || "5042");
 export const USDC = process.env.ONEROUTER_ARC_USDC || "0x3600000000000000000000000000000000000000";
 export const DECIMALS = Number(process.env.ONEROUTER_ARC_DECIMALS || "6");
+export const NATIVE_DECIMALS = Number(process.env.ONEROUTER_ARC_NATIVE_DECIMALS || "18");
 export const CONFIRMATIONS = Number(process.env.ONEROUTER_ARC_CONFIRMATIONS || "2");
 export const EXPLORER = (process.env.ONEROUTER_ARC_EXPLORER || "https://explorer.arc.io").replace(/\/$/, "");
 export const NETWORK = process.env.ONEROUTER_ARC_NETWORK || "Arc";
@@ -117,6 +127,11 @@ async function headBlockImpl(): Promise<number> {
   return parseInt(result, 16);
 }
 
+async function balanceAtImpl(address: string, blockTag: string): Promise<bigint> {
+  const result = (await rpc("eth_getBalance", [address, blockTag])) as string;
+  return BigInt(result);
+}
+
 function topic(address: string): string {
   return "0x" + address.toLowerCase().replace("0x", "").padStart(64, "0");
 }
@@ -187,7 +202,7 @@ async function incomingImpl(address: string, fromBlock: number, toBlock: number)
 // Test seam: the real chain calls, held behind a mutable object so tests can stub them
 // against a fake chain (mirrors Python's `arc.head_block = lambda: ...` monkeypatching
 // in test_deposits.py — bare function bindings can't be swapped like that in ESM).
-export const chain = { headBlock: headBlockImpl, incoming: incomingImpl };
+export const chain = { headBlock: headBlockImpl, incoming: incomingImpl, balanceAt: balanceAtImpl };
 
 export interface Deposit {
   reference: string;
@@ -214,6 +229,10 @@ export interface Deposit {
   confirmations_seen?: number;
   received_usd?: number;
   head?: number;
+  // High-water mark for the native-balance path (see the file header) — an absolute
+  // reading, not a delta, so unlike the log path it needs no hash bookkeeping to
+  // avoid double-crediting the same funds across polls.
+  native_credited?: number;
 }
 
 /** A deposit intent. The address is the account's own, so the amount is a suggestion
@@ -261,53 +280,81 @@ export async function check(deposit: Deposit): Promise<[Deposit, number]> {
   const head = await chain.headBlock();
   const start = deposit.cursor ?? deposit.from_block;
   const stop = Math.min(head, start + MAX_SCAN);
-  if (stop < start) return [deposit, 0];
-
-  const transfers = await chain.incoming(deposit.address, start, stop);
-  let mark = deposit.credited_through ?? -1;
-  let edge = new Set(deposit.credited_at_edge ?? []);
 
   let credited = 0;
   const pending: Transfer[] = [];
   const seen = deposit.seen ?? [];
   let receivedUnits = deposit.received_units ?? 0;
 
-  for (const entry of transfers) {
-    const block = entry.block;
-    if (block < mark || (block === mark && edge.has(entry.tx))) continue; // already paid
-    if (head - block + 1 < CONFIRMATIONS) {
-      pending.push(entry);
-      continue; // not buried yet; next pass will take it
+  if (stop >= start) {
+    const transfers = await chain.incoming(deposit.address, start, stop);
+    let mark = deposit.credited_through ?? -1;
+    let edge = new Set(deposit.credited_at_edge ?? []);
+
+    for (const entry of transfers) {
+      const block = entry.block;
+      if (block < mark || (block === mark && edge.has(entry.tx))) continue; // already paid
+      if (head - block + 1 < CONFIRMATIONS) {
+        pending.push(entry);
+        continue; // not buried yet; next pass will take it
+      }
+      entry.confirmations = head - block + 1;
+      if (EXPLORER) entry.explorer_url = `${EXPLORER}/tx/${entry.tx}`;
+      seen.push(entry);
+      receivedUnits += entry.units;
+      credited += entry.units;
+      if (block > mark) {
+        mark = block;
+        edge = new Set([entry.tx]);
+      } else {
+        edge.add(entry.tx);
+      }
     }
-    entry.confirmations = head - block + 1;
-    if (EXPLORER) entry.explorer_url = `${EXPLORER}/tx/${entry.tx}`;
-    seen.push(entry);
-    receivedUnits += entry.units;
-    credited += entry.units;
-    if (block > mark) {
-      mark = block;
-      edge = new Set([entry.tx]);
-    } else {
-      edge.add(entry.tx);
-    }
+
+    deposit.credited_through = mark;
+    deposit.credited_at_edge = Array.from(edge).sort();
+    // Hold back the confirmation depth so a shallow transfer is re-seen, and never
+    // let the cursor run past the head.
+    deposit.cursor = Math.max(start, Math.min(stop - CONFIRMATIONS + 1, head));
   }
 
-  deposit.credited_through = mark;
-  deposit.credited_at_edge = Array.from(edge).sort();
+  // Native-balance path (see the file header): an absolute reading against the
+  // confirmed block, so — unlike the log scan — no hash bookkeeping is needed to
+  // avoid re-crediting the same funds on the next poll.
+  let nativePendingUnits = 0;
+  try {
+    const confirmedBlock = Math.max(0, head - CONFIRMATIONS + 1);
+    const [confirmedWei, latestWei] = await Promise.all([
+      chain.balanceAt(deposit.address, "0x" + confirmedBlock.toString(16)),
+      chain.balanceAt(deposit.address, "latest"),
+    ]);
+    const scale = 10n ** BigInt(NATIVE_DECIMALS - DECIMALS);
+    const nativeConfirmedUnits = Number(confirmedWei / scale);
+    nativePendingUnits = Number((latestWei > confirmedWei ? latestWei - confirmedWei : 0n) / scale);
+
+    const priorNative = deposit.native_credited ?? 0;
+    const newlyCreditedNative = Math.max(0, nativeConfirmedUnits - priorNative);
+    if (newlyCreditedNative > 0) {
+      deposit.native_credited = nativeConfirmedUnits;
+      receivedUnits += newlyCreditedNative;
+      credited += newlyCreditedNative;
+    }
+  } catch {
+    // No RPC support for a historical-block balance, an address the chain doesn't
+    // recognise (e.g. a stubbed test address), or a transient network error — the
+    // log-scan result above still stands on its own.
+  }
+
   deposit.seen = seen.slice(-SEEN_LIMIT);
   deposit.received_units = receivedUnits;
-
-  // Hold back the confirmation depth so a shallow transfer is re-seen, and never let
-  // the cursor run past the head.
-  deposit.cursor = Math.max(start, Math.min(stop - CONFIRMATIONS + 1, head));
 
   const now = Math.floor(Date.now() / 1000);
   if (receivedUnits > 0) {
     deposit.status = "credited";
-  } else if (pending.length) {
+  } else if (pending.length || nativePendingUnits > 0) {
     deposit.status = "pending";
-    deposit.pending_units = pending.reduce((sum, e) => sum + e.units, 0);
-    deposit.confirmations_seen = head - pending[pending.length - 1].block + 1;
+    deposit.pending_units = pending.reduce((sum, e) => sum + e.units, 0) + nativePendingUnits;
+    deposit.confirmations_seen = pending.length ? head - pending[pending.length - 1].block + 1 : 0;
   } else if (deposit.expires < now) {
     deposit.status = "expired";
   } else {

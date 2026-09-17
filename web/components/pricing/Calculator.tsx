@@ -2,21 +2,13 @@
 
 import { useMemo, useState } from "react";
 import type { Model } from "@/lib/content/data";
+import { formatUsd as usd } from "@/lib/format";
 
 const PRESETS: Array<[string, number, number]> = [
   ["Chat", 500000, 40000],
   ["Coding agent", 5000000, 300000],
   ["Long documents", 25000000, 150000],
 ];
-
-function usd(v: number): string {
-  if (v === 0) return "$0.00";
-  if (v < 1) {
-    let s = v.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
-    return `$${s}`;
-  }
-  return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
 
 export function Calculator({ models }: { models: Model[] }) {
   const sorted = useMemo(() => [...models].sort((a, b) => a.per_m.in - b.per_m.in), [models]);

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Mark } from "@/components/chrome/Mark";
 import { ThemeToggle } from "@/components/chrome/ThemeToggle";
+import { formatUsd } from "@/lib/format";
 import type { Conversation } from "@/lib/api/chatStorage";
 
 export function Sidebar({
@@ -76,7 +77,7 @@ export function Sidebar({
         <div className="credits">
           <div>
             <span className="credits-label">Available credit</span>
-            <b id="balance">{balance !== null ? `$${balance.toFixed(2)}` : "—"}</b>
+            <b id="balance">{balance !== null ? formatUsd(balance) : "—"}</b>
           </div>
           <Link className="btn sm" href="/pay">
             Add credit

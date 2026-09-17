@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api } from "@/lib/api/client";
 import { getKey, setKey as saveKey } from "@/lib/api/tokens";
 import { CopyButton } from "@/components/chrome/CopyButton";
+import { formatUsd } from "@/lib/format";
 import { ApiError } from "@/lib/api/types";
 import type { MeInfo } from "@/lib/api/types";
 
@@ -65,7 +66,7 @@ export function ApiKeys() {
                 <div style={{ marginTop: 16 }}>
                   <div className="dash-stat">
                     <span>Balance</span>
-                    <b>${me.balance_usd.toFixed(2)}</b>
+                    <b>{formatUsd(me.balance_usd)}</b>
                   </div>
                   <div className="dash-stat">
                     <span>Requests</span>
