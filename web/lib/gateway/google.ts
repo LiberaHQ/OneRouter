@@ -6,14 +6,30 @@ const CLIENT_ID = process.env.ONEROUTER_GOOGLE_CLIENT_ID || "";
 const CLIENT_SECRET = process.env.ONEROUTER_GOOGLE_CLIENT_SECRET || "";
 const REDIRECT_URI = process.env.ONEROUTER_GOOGLE_REDIRECT_URI || "";
 
-export function googleReady(): boolean {
-  return Boolean(CLIENT_ID && CLIENT_SECRET && REDIRECT_URI);
+export function resolvedGoogleRedirectUri(req?: Request): string {
+  const configured = process.env.ONEROUTER_GOOGLE_REDIRECT_URI?.trim();
+  if (configured) return configured;
+
+  const fallback = "http://localhost:8080/v1/auth/oauth/google/callback";
+  if (!req) return fallback;
+
+  const url = new URL(req.url);
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host") || req.headers.get("host");
+  const proto = (forwardedProto || url.protocol.replace(":", "")).split(",")[0].trim() || "http";
+  const host = (forwardedHost || url.host).split(",")[0].trim();
+  return `${proto}://${host}/v1/auth/oauth/google/callback`;
 }
 
-export function authUrl(state: string): string {
+export function googleReady(req?: Request): boolean {
+  const redirectUri = req ? resolvedGoogleRedirectUri(req) : REDIRECT_URI || "";
+  return Boolean(CLIENT_ID && CLIENT_SECRET && redirectUri);
+}
+
+export function authUrl(state: string, redirectUri: string = REDIRECT_URI): string {
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri,
     response_type: "code",
     scope: "openid email profile",
     state,
@@ -39,8 +55,10 @@ interface GoogleUserInfo {
 
 export class GoogleAuthError extends Error {}
 
-export async function exchangeCode(code: string): Promise<GoogleUserInfo> {
-  if (!googleReady()) throw new GoogleAuthError("Google sign-in is not configured");
+export async function exchangeCode(code: string, redirectUri: string = REDIRECT_URI): Promise<GoogleUserInfo> {
+  if (!redirectUri || !CLIENT_ID || !CLIENT_SECRET) {
+    throw new GoogleAuthError("Google sign-in is not configured");
+  }
 
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -49,7 +67,7 @@ export async function exchangeCode(code: string): Promise<GoogleUserInfo> {
       code,
       client_id: CLIENT_ID,
       client_secret: CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
   });

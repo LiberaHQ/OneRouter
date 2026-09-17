@@ -47,7 +47,7 @@ await client.chat.completions.create({
     [
       "Agent env",
       `ONEROUTER_KEY=or-live-...
-OPENAI_BASE_URL=https://api.onerouter.dev/v1
+OPENAI_BASE_URL=https://onerouter.network/v1
 OPENAI_API_KEY=$ONEROUTER_KEY
 OPENAI_MODEL=deepseek/deepseek-v4-flash`,
     ],

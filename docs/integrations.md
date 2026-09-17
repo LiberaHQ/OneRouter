@@ -32,7 +32,7 @@ curl {{API}}/chat/completions \
 # Use the BARE host: Claude Code appends /v1/messages itself.
 
 export ONEROUTER_KEY=or-live-YOUR-KEY-HERE
-export ANTHROPIC_BASE_URL=https://api.onerouter.dev
+export ANTHROPIC_BASE_URL=https://onerouter.network
 export ANTHROPIC_AUTH_TOKEN="$ONEROUTER_KEY"
 export ANTHROPIC_MODEL="deepseek/deepseek-v4-flash"
 
@@ -45,7 +45,7 @@ model_provider = "onerouter"
 
 [model_providers.onerouter]
 name = "OneRouter"
-base_url = "https://api.onerouter.dev/v1"
+base_url = "https://onerouter.network/v1"
 env_key = "ONEROUTER_KEY"
 wire_api = "responses"
 --- OpenCode
@@ -57,7 +57,7 @@ wire_api = "responses"
       "npm": "@ai-sdk/openai-compatible",
       "name": "OneRouter",
       "options": {
-        "baseURL": "https://api.onerouter.dev/v1",
+        "baseURL": "https://onerouter.network/v1",
         "apiKey": "{env:ONEROUTER_KEY}"
       },
       "models": {
@@ -71,7 +71,7 @@ wire_api = "responses"
 Cursor Settings → Models → OpenAI API Key → Override OpenAI Base URL
 
 OpenAI API Key:            or-live-YOUR-KEY-HERE
-Override OpenAI Base URL:  https://api.onerouter.dev/v1
+Override OpenAI Base URL:  https://onerouter.network/v1
 Model ID:                  deepseek/deepseek-v4-flash
 ::
 
@@ -84,7 +84,7 @@ models:
   - name: DeepSeek V4 Flash (OneRouter)
     provider: openai
     model: deepseek/deepseek-v4-flash
-    apiBase: https://api.onerouter.dev/v1
+    apiBase: https://onerouter.network/v1
     apiKey: or-live-YOUR-KEY-HERE
     roles: [chat, edit, apply]
 --- Zed
@@ -93,7 +93,7 @@ models:
   "language_models": {
     "openai_compatible": {
       "onerouter": {
-        "api_url": "https://api.onerouter.dev/v1",
+        "api_url": "https://onerouter.network/v1",
         "available_models": [
           {
             "name": "deepseek/deepseek-v4-flash",
@@ -109,7 +109,7 @@ models:
 Sidebar → ⚙ Settings → API Configuration
 
 API Provider:  OpenAI Compatible
-Base URL:      https://api.onerouter.dev/v1
+Base URL:      https://onerouter.network/v1
 API Key:       or-live-YOUR-KEY-HERE
 Model ID:      deepseek/deepseek-v4-flash
 
@@ -120,7 +120,7 @@ Leave "Use custom base URL" ON. Do not append /chat/completions.
 
 ::tabs
 --- Aider
-export OPENAI_API_BASE=https://api.onerouter.dev/v1
+export OPENAI_API_BASE=https://onerouter.network/v1
 export OPENAI_API_KEY=or-live-YOUR-KEY-HERE
 
 aider --model openai/deepseek/deepseek-v4-flash
@@ -130,14 +130,14 @@ model_list:
   - model_name: deepseek-v4-flash
     litellm_params:
       model: openai/deepseek/deepseek-v4-flash
-      api_base: https://api.onerouter.dev/v1
+      api_base: https://onerouter.network/v1
       api_key: os.environ/ONEROUTER_KEY
 --- SillyTavern
 API Connections (the plug icon)
 
 API:            Chat Completion
 Source:         Custom (OpenAI-compatible)
-Endpoint URL:   https://api.onerouter.dev/v1
+Endpoint URL:   https://onerouter.network/v1
 API Key:        or-live-YOUR-KEY-HERE
 
 Click Connect, then pick a model from the list it fetches.

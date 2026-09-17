@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { STORE } from "@/lib/gateway/store";
 import { signedInBody } from "@/lib/gateway/authRoutes";
-import { exchangeCode, GoogleAuthError } from "@/lib/gateway/google";
+import { exchangeCode, GoogleAuthError, resolvedGoogleRedirectUri } from "@/lib/gateway/google";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  // Redirect relative to this request's own origin, not the public SITE constant —
-  // this route is reachable at whatever origin ONEROUTER_GOOGLE_REDIRECT_URI points
-  // to (localhost in dev), which may differ from the production domain.
-  const origin = url.origin;
+  // Redirect relative to the actual request origin, including proxy/SSL termination.
+  const proto = (req.headers.get("x-forwarded-proto") || url.protocol.replace(":", "")).split(",")[0].trim() || "http";
+  const host = (req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host).split(",")[0].trim();
+  const origin = `${proto}://${host}`;
   function redirectToSignin(reason: string): NextResponse {
     return NextResponse.redirect(`${origin}/signin?oauth_error=${encodeURIComponent(reason)}`);
   }
@@ -25,8 +25,9 @@ export async function GET(req: Request) {
   if (!valid) return redirectToSignin("that sign-in attempt expired; try again");
 
   let info;
+  const redirectUri = resolvedGoogleRedirectUri(req);
   try {
-    info = await exchangeCode(code);
+    info = await exchangeCode(code, redirectUri);
   } catch (e) {
     return redirectToSignin(e instanceof GoogleAuthError ? e.message : "Google sign-in failed");
   }

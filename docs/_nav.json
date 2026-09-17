@@ -1,7 +1,7 @@
 {
   "brand": "OneRouter",
   "domain": "onerouter.dev",
-  "api": "https://api.onerouter.dev/v1",
+  "api": "https://onerouter.network/v1",
   "tagline": "One key. Every model. No account.",
   "groups": [
     { "label": "Start here", "pages": ["quickstart", "open-tier", "authentication"] },
