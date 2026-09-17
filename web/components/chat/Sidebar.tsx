@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Mark } from "@/components/chrome/Mark";
 import { ThemeToggle } from "@/components/chrome/ThemeToggle";
+import { AccountMenu } from "@/components/chrome/AccountMenu";
 import { formatUsd } from "@/lib/format";
 import type { Conversation } from "@/lib/api/chatStorage";
 
@@ -72,7 +73,7 @@ export function Sidebar({
       </div>
       <div className="side-foot">
         <p className="side-note">
-          Your conversations stay on this device. The key is stored here too, and is only ever sent to the gateway.
+          Your conversations stay on this device. Your API key stays with your account and is loaded only while you use the app.
         </p>
         <div className="credits">
           <div>
@@ -90,6 +91,7 @@ export function Sidebar({
           <span className="spacer" />
           <ThemeToggle />
         </div>
+        <AccountMenu />
       </div>
     </aside>
   );

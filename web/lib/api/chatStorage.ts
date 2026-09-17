@@ -1,7 +1,8 @@
 "use client";
 
 // Chat history lives only in this browser's localStorage — never synced, never on the
-// server. Capped at 60 conversations, matching the original.
+// server. Each account gets its own key so users sharing a browser never share a
+// conversation list. Histories are capped at 60 conversations per account.
 export interface ChatTurn {
   role: "user" | "assistant" | "error";
   content: string;
@@ -15,7 +16,7 @@ export interface Conversation {
   turns: ChatTurn[];
 }
 
-const CONVOS_KEY = "or-convos";
+const CONVOS_KEY_PREFIX = "or-convos:";
 const MODEL_KEY = "or-model";
 const MAX_CONVOS = 60;
 
@@ -28,17 +29,21 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-export function loadConversations(): Conversation[] {
+function conversationsKey(accountId: string): string {
+  return CONVOS_KEY_PREFIX + encodeURIComponent(accountId);
+}
+
+export function loadConversations(accountId: string): Conversation[] {
   try {
-    return safeParse<Conversation[]>(localStorage.getItem(CONVOS_KEY), []);
+    return safeParse<Conversation[]>(localStorage.getItem(conversationsKey(accountId)), []);
   } catch {
     return [];
   }
 }
 
-export function saveConversations(convos: Conversation[]): void {
+export function saveConversations(accountId: string, convos: Conversation[]): void {
   try {
-    localStorage.setItem(CONVOS_KEY, JSON.stringify(convos.slice(0, MAX_CONVOS)));
+    localStorage.setItem(conversationsKey(accountId), JSON.stringify(convos.slice(0, MAX_CONVOS)));
   } catch {
     // storage unavailable — history just won't persist
   }

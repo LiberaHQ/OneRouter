@@ -32,6 +32,10 @@ export async function GET(req: Request) {
   }
 
   const [acct, minted] = await STORE.signIn(`google:${info.sub}`);
+  if (acct.email !== info.email) {
+    acct.email = info.email;
+    await STORE.persist();
+  }
   const body = await signedInBody(acct, minted, { label: info.email });
 
   // A one-shot handoff: the callback is a top-level browser navigation, not a fetch,

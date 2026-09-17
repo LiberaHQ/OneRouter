@@ -4,13 +4,13 @@ import { bearer } from "@/lib/gateway/request";
 import { principal } from "@/lib/gateway/authRoutes";
 
 export async function POST(req: Request) {
-  // Signed in (session or an existing key) but this device has no local key: issue a
-  // fresh one for that same account instead of minting an unrelated anonymous one.
+  // A signed-in account always gets its existing database-backed key. Legacy
+  // accounts without a retrievable key receive exactly one replacement.
   const token = bearer(req);
   if (token) {
     const acct = principal(req);
     if (acct instanceof Response) return acct;
-    const issued = await STORE.issueKeyFor(acct);
+    const issued = await STORE.keyFor(acct);
     return Response.json(issued, { status: 201 });
   }
 

@@ -36,10 +36,12 @@ export interface Account {
   spent_usd: number;
   requests: number;
   key_hash: string;
+  api_key?: string;
   recovery_hash: string;
   revoked: boolean;
   open_tier: { day: string; requests: number; tokens: number };
   identities: string[];
+  email?: string;
   arc_address?: string;
   password?: PasswordRecord;
   // Charged but not yet settled to the treasury address on-chain — accumulates in
@@ -116,6 +118,13 @@ export class Store {
     this.state = loadState();
   }
 
+  /** Next.js can evaluate route handlers in separate module instances. Refresh
+   * cross-route auth state before reading it so one handler sees another handler's
+   * committed sessions and one-shot challenges. */
+  private refresh(): void {
+    this.state = loadState();
+  }
+
   // ── Keys ──────────────────────────────────────────────────────────────────
   async mint(funded = 0.0): Promise<{ key: string; recovery: string; account: string; balance_usd: number }> {
     return withLock(() => {
@@ -129,6 +138,7 @@ export class Store {
         spent_usd: 0.0,
         requests: 0,
         key_hash: digest(key),
+        api_key: key,
         recovery_hash: digest(recovery),
         revoked: false,
         open_tier: { day: todayUTC(), requests: 0, tokens: 0 },
@@ -165,6 +175,7 @@ export class Store {
       delete this.state.index[acct.key_hash];
       const key = "or-live-" + randomHex(16);
       acct.key_hash = digest(key);
+      acct.api_key = key;
       this.state.index[digest(key)] = acctId;
       saveState(this.state);
       return { key, account: acctId, balance_usd: acct.balance_usd };
@@ -181,10 +192,18 @@ export class Store {
       delete this.state.index[acct.key_hash];
       const key = "or-live-" + randomHex(16);
       acct.key_hash = digest(key);
+      acct.api_key = key;
       this.state.index[digest(key)] = acct.id;
       saveState(this.state);
       return { key, account: acct.id, balance_usd: acct.balance_usd };
     });
+  }
+
+  /** Returns the account's stable key. Legacy accounts only have a hash, so they
+   * receive one replacement the first time they are loaded after this migration. */
+  async keyFor(acct: Account): Promise<{ key: string; account: string; balance_usd: number }> {
+    if (acct.api_key) return { key: acct.api_key, account: acct.id, balance_usd: acct.balance_usd };
+    return this.issueKeyFor(acct);
   }
 
   async credit(acct: Account, amount: number): Promise<Account> {
@@ -285,6 +304,7 @@ export class Store {
   }
 
   session(token: string | undefined): Account | null {
+    this.refresh();
     const row = this.state.sessions[digest(token || "")];
     if (!row || row.expires < Date.now() / 1000) return null;
     return this.accountById(row.account);
@@ -292,6 +312,7 @@ export class Store {
 
   async closeSession(token: string | undefined): Promise<void> {
     await withLock(() => {
+      this.refresh();
       delete this.state.sessions[digest(token || "")];
       saveState(this.state);
     });
@@ -307,6 +328,7 @@ export class Store {
   // ── Short-lived challenges (OTP codes, wallet nonces) ────────────────────
   async stash(kind: string, payload: Record<string, unknown>, ttl = 600): Promise<string> {
     return withLock(() => {
+      this.refresh();
       const ref = randomBytes(18).toString("base64url");
       const now = Math.floor(Date.now() / 1000);
       for (const k of Object.keys(this.state.pending)) {
@@ -321,6 +343,7 @@ export class Store {
   /** One-shot: a challenge that has been read cannot be replayed. */
   async take(ref: string | undefined, kind: string): Promise<Record<string, unknown> | null> {
     const row = await withLock(() => {
+      this.refresh();
       const r = this.state.pending[ref || ""];
       delete this.state.pending[ref || ""];
       saveState(this.state);
@@ -331,6 +354,7 @@ export class Store {
   }
 
   peek(ref: string | undefined, kind: string): Record<string, unknown> | null {
+    this.refresh();
     const row = this.state.pending[ref || ""];
     if (!row || row.kind !== kind || row.expires < Date.now() / 1000) return null;
     return row;
@@ -338,6 +362,7 @@ export class Store {
 
   async bump(ref: string | undefined, field: string): Promise<number> {
     return withLock(() => {
+      this.refresh();
       const row = this.state.pending[ref || ""];
       if (!row) return 0;
       row[field] = ((row[field] as number) ?? 0) + 1;

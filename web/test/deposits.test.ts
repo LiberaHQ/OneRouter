@@ -43,6 +43,8 @@ function deposit(first: number): Deposit {
     expires: now + 3600,
     status: "waiting",
     mainnet: false,
+    native_credited: 0,
+    native_baseline_set: true,
   };
 }
 
@@ -144,6 +146,20 @@ describe("native-balance deposit crediting", () => {
     arc.chain.balanceAt = async () => 0n;
   });
 
+  it("snapshots an address's existing balance when opening a deposit", async () => {
+    CHAIN.head = 2000;
+    CHAIN.logs = [];
+    native = [{ block: 1990, wei: nativeUnits(3) }];
+
+    const opened = await arc.openDeposit("acct", "0xabc", 20);
+    expect(opened.native_credited).toBe(arc.units(3));
+    expect(opened.native_baseline_set).toBe(true);
+
+    const [checked, credited] = await arc.check(opened);
+    expect(credited).toBe(0);
+    expect(checked.status).toBe("waiting");
+  });
+
   it("a buried native transfer credits exactly once", async () => {
     CHAIN.head = 2000;
     CHAIN.logs = [];
@@ -154,6 +170,25 @@ describe("native-balance deposit crediting", () => {
 
     const [, again] = await arc.check(d);
     expect(again).toBe(0);
+  });
+
+  it("treats an existing address balance as a baseline, not a new payment", async () => {
+    CHAIN.head = 2000;
+    CHAIN.logs = [];
+    native = [{ block: 1990, wei: nativeUnits(3) }];
+    const legacyDeposit = deposit(1985);
+    delete legacyDeposit.native_credited;
+    delete legacyDeposit.native_baseline_set;
+
+    let [d, credited] = await arc.check(legacyDeposit);
+    expect(credited).toBe(0);
+    expect(d.status).toBe("waiting");
+
+    native.push({ block: 1995, wei: nativeUnits(1) });
+    [d, credited] = await arc.check(d);
+    expect(credited).toBe(arc.units(1));
+    expect(d.received_usd).toBe(1);
+    expect(d.status).toBe("credited");
   });
 
   it("a native transfer at the head is pending until buried", async () => {

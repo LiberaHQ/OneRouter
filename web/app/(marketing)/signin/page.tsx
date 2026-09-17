@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { AuthPanel } from "@/components/signin/AuthPanel";
+import { SignInGate } from "@/components/signin/SignInGate";
 import { BRAND, API } from "@/lib/content/nav";
 
 export const metadata: Metadata = {
@@ -11,20 +11,8 @@ export const metadata: Metadata = {
 
 export default function SignInPage() {
   return (
-    <main className="page auth-page plain" id="signin">
-      <section className="authbox">
-        <h1>Welcome to {BRAND}</h1>
-        <p className="auth-sub">Sign in with Google or a wallet. Either one mints your key.</p>
-        <Suspense fallback={null}>
-          <AuthPanel />
-        </Suspense>
-        <noscript>
-          <p className="note">
-            Signing in needs JavaScript, because every method here is a live exchange with the gateway. You can
-            still create a key without one: <code>curl -X POST {API}/keys</code>.
-          </p>
-        </noscript>
-      </section>
-    </main>
+    <Suspense fallback={<main className="page auth-page plain" aria-busy="true" />}>
+      <SignInGate brand={BRAND} apiUrl={API} />
+    </Suspense>
   );
 }

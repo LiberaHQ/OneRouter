@@ -1,13 +1,17 @@
 "use client";
 
-// or-key / or-session live separately in localStorage, matching the gateway's dual
-// token model: /v1/me, /v1/me/open-tier, /v1/receipts/*, /v1/chat/completions and
-// /v1/messages accept ONLY a raw key; /v1/auth/session, /v1/pay/deposit and
-// /v1/auth/password/set accept EITHER, session preferred. Keeping these as distinct
-// functions (rather than one "isLoggedIn" boolean) makes that asymmetry visible at
-// every call site instead of a runtime-only convention.
+// The login session persists in localStorage. The API key does not: it is stored on
+// the account server-side and held in module memory only while this page is open.
+// getKey() performs a one-time migration of the old localStorage value by removing
+// it immediately after reading it.
 const KEY_STORAGE = "or-key";
 const SESSION_STORAGE = "or-session";
+const AUTH_CHANGE_EVENT = "onerouter:auth-change";
+let memoryKey: string | null = null;
+
+function announceAuthChange(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(AUTH_CHANGE_EVENT));
+}
 
 function safeGet(key: string): string | null {
   try {
@@ -32,12 +36,20 @@ function safeRemove(key: string): void {
 }
 
 export function getKey(): string | null {
-  return safeGet(KEY_STORAGE);
+  if (memoryKey) return memoryKey;
+  const legacyKey = safeGet(KEY_STORAGE);
+  if (legacyKey) {
+    memoryKey = legacyKey;
+    safeRemove(KEY_STORAGE);
+  }
+  return memoryKey;
 }
 export function setKey(key: string): void {
-  safeSet(KEY_STORAGE, key);
+  memoryKey = key;
+  safeRemove(KEY_STORAGE);
 }
 export function clearKey(): void {
+  memoryKey = null;
   safeRemove(KEY_STORAGE);
 }
 
@@ -46,9 +58,20 @@ export function getSession(): string | null {
 }
 export function setSession(session: string): void {
   safeSet(SESSION_STORAGE, session);
+  announceAuthChange();
 }
 export function clearSession(): void {
   safeRemove(SESSION_STORAGE);
+  announceAuthChange();
+}
+
+export function onAuthChange(callback: () => void): () => void {
+  window.addEventListener(AUTH_CHANGE_EVENT, callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener(AUTH_CHANGE_EVENT, callback);
+    window.removeEventListener("storage", callback);
+  };
 }
 
 /** session() || key() — matches routes_auth.principal()'s preference order for the

@@ -26,17 +26,18 @@ export async function signedInBody(
   extra: Record<string, unknown> = {}
 ): Promise<Record<string, unknown>> {
   const token = await STORE.openSession(acct);
+  const storedKey = minted?.key ?? (await STORE.keyFor(acct)).key;
   const body: Record<string, unknown> = {
     session: token,
+    key: storedKey,
     account: acct.id,
     balance_usd: Math.round(acct.balance_usd * 1e6) / 1e6,
     identities: acct.identities ?? [],
     new_account: Boolean(minted),
   };
-  // The key and recovery secret exist for exactly one response: the one that created
-  // the account. Never retrievable afterwards.
+  // The recovery secret exists for exactly one response. The API key is account data
+  // and is returned again after authenticated sign-in.
   if (minted) {
-    body.key = minted.key;
     body.recovery = minted.recovery;
   }
   return { ...body, ...extra };

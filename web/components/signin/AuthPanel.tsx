@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api/client";
 import { setKey, setSession } from "@/lib/api/tokens";
@@ -29,6 +29,7 @@ export function AuthPanel() {
   const [methods, setMethods] = useState<AuthMethods["methods"] | null>(null);
   const [status, setStatus] = useState<{ text: string; bad?: boolean } | null>(null);
   const [reveal, setReveal] = useState<{ title: string; lines: string[] } | null>(null);
+  const redeemedOauthRef = useRef<string | null>(null);
 
   useEffect(() => {
     api.authMethods().then((r) => setMethods(r.methods)).catch(() => {});
@@ -46,14 +47,24 @@ export function AuthPanel() {
     }
     const ref = searchParams.get("oauth");
     if (!ref) return;
-    router.replace("/signin");
+    if (redeemedOauthRef.current === ref) return;
+    redeemedOauthRef.current = ref;
+    window.history.replaceState(window.history.state, "", "/signin");
     fetch(`/v1/auth/oauth/result/${ref}`)
       .then((res) => {
-        if (!res.ok) throw new Error("sign-in result expired");
+        if (!res.ok) {
+          const message = res.status >= 500
+            ? "The sign-in service failed. Try again."
+            : "That sign-in attempt expired. Try again.";
+          throw new Error(message);
+        }
         return res.json();
       })
       .then((data: SignedIn) => onSignedIn(data))
-      .catch(() => setStatus({ text: "That sign-in attempt expired. Try again.", bad: true }));
+      .catch((error: unknown) => {
+        const text = error instanceof Error ? error.message : "Google sign-in failed. Try again.";
+        setStatus({ text, bad: true });
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 

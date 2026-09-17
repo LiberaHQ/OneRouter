@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api/client";
-import { getKey, setKey as saveKey } from "@/lib/api/tokens";
+import { getKey, principal, setKey as saveKey } from "@/lib/api/tokens";
 import { CopyButton } from "@/components/chrome/CopyButton";
 import { formatUsd } from "@/lib/format";
 import { ApiError } from "@/lib/api/types";
@@ -17,11 +17,24 @@ export function ApiKeys() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ text: string; bad?: boolean } | null>(null);
 
+  /* Browser credentials hydrate after the server render. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const k = getKey();
     setKeyState(k);
-    if (k) api.me(k).then(setMe).catch(() => {});
+    const token = principal();
+    if (token) {
+      api.session(token)
+        .then((session) => {
+          saveKey(session.key);
+          setKeyState(session.key);
+          return api.me(session.key);
+        })
+        .then(setMe)
+        .catch(() => {});
+    }
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function rotate(e: React.FormEvent) {
     e.preventDefault();
@@ -77,7 +90,7 @@ export function ApiKeys() {
             </>
           ) : (
             <p className="panel-note" style={{ padding: 0 }}>
-              No key on this device yet. <Link href="/keys">Get a key →</Link>
+              No key is available for this account yet. <Link href="/keys">Get a key →</Link>
             </p>
           )}
         </div>

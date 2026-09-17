@@ -9,6 +9,7 @@ const TOP_NAV: Array<[string, string]> = [
   ["Docs", "/docs/quickstart"],
   ["Models", "/models"],
   ["Pricing", "/pricing"],
+  ["Chat", "/chat"],
 ];
 
 export function TopNav({ active = "" }: { active?: string }) {
@@ -30,9 +31,6 @@ export function TopNav({ active = "" }: { active?: string }) {
         <span className="spacer" />
         <div className="right">
           <ThemeToggle />
-          <Link className="btn ghost" href="/docs/quickstart">
-            Docs
-          </Link>
           <AuthCta />
         </div>
       </div>

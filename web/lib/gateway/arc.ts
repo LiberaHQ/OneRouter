@@ -233,6 +233,7 @@ export interface Deposit {
   // reading, not a delta, so unlike the log path it needs no hash bookkeeping to
   // avoid double-crediting the same funds across polls.
   native_credited?: number;
+  native_baseline_set?: boolean;
 }
 
 /** A deposit intent. The address is the account's own, so the amount is a suggestion
@@ -241,10 +242,25 @@ export async function openDeposit(accountId: string, address: string, usdWanted:
   const [ready, why] = configured();
   if (!ready) throw new ChainError(why);
   let start = 0;
+  let headKnown = false;
   try {
     start = await chain.headBlock();
+    headKnown = true;
   } catch {
     start = 0;
+  }
+  let nativeCredited = 0;
+  let nativeBaselineSet = false;
+  if (headKnown) {
+    try {
+      const confirmedBlock = Math.max(0, start - CONFIRMATIONS + 1);
+      const confirmedWei = await chain.balanceAt(address, "0x" + confirmedBlock.toString(16));
+      const scale = 10n ** BigInt(NATIVE_DECIMALS - DECIMALS);
+      nativeCredited = Number(confirmedWei / scale);
+      nativeBaselineSet = true;
+    } catch {
+      // The first successful status check establishes the baseline instead.
+    }
   }
   const now = Math.floor(Date.now() / 1000);
   return {
@@ -266,6 +282,8 @@ export async function openDeposit(accountId: string, address: string, usdWanted:
     expires: now + DEPOSIT_TTL,
     status: "waiting",
     mainnet: isMainnet(),
+    native_credited: nativeCredited,
+    native_baseline_set: nativeBaselineSet,
   };
 }
 
@@ -333,9 +351,10 @@ export async function check(deposit: Deposit): Promise<[Deposit, number]> {
     nativePendingUnits = Number((latestWei > confirmedWei ? latestWei - confirmedWei : 0n) / scale);
 
     const priorNative = deposit.native_credited ?? 0;
-    const newlyCreditedNative = Math.max(0, nativeConfirmedUnits - priorNative);
+    const newlyCreditedNative = deposit.native_baseline_set ? Math.max(0, nativeConfirmedUnits - priorNative) : 0;
+    deposit.native_credited = nativeConfirmedUnits;
+    deposit.native_baseline_set = true;
     if (newlyCreditedNative > 0) {
-      deposit.native_credited = nativeConfirmedUnits;
       receivedUnits += newlyCreditedNative;
       credited += newlyCreditedNative;
     }

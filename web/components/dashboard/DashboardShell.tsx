@@ -1,10 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Mark } from "@/components/chrome/Mark";
-import { api } from "@/lib/api/client";
-import { principal, clearKey, clearSession } from "@/lib/api/tokens";
+import { AccountMenu } from "@/components/chrome/AccountMenu";
 
 const NAV = [
   { href: "/dashboard", label: "Overview" },
@@ -15,22 +14,7 @@ const NAV = [
 ];
 
 export function DashboardShell({ brand, children }: { brand: string; children: React.ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
-
-  async function signOut() {
-    const token = principal();
-    if (token) {
-      try {
-        await api.signout(token);
-      } catch {
-        // best-effort — clear local tokens regardless
-      }
-    }
-    clearKey();
-    clearSession();
-    router.push("/");
-  }
 
   return (
     <div className="dash">
@@ -50,9 +34,7 @@ export function DashboardShell({ brand, children }: { brand: string; children: R
         </nav>
         <div className="side-scroll" />
         <div className="side-foot">
-          <button className="btn sm" onClick={signOut}>
-            Sign out
-          </button>
+          <AccountMenu />
         </div>
       </aside>
       <header className="dash-top">

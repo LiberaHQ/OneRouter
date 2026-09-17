@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api/client";
-import { getKey, principal } from "@/lib/api/tokens";
+import { getKey, principal, setKey as rememberKey } from "@/lib/api/tokens";
 import { CopyButton } from "@/components/chrome/CopyButton";
 import { formatUsd } from "@/lib/format";
 import type { SessionInfo } from "@/lib/api/types";
@@ -14,16 +14,24 @@ export function Overview({ apiUrl, brand }: { apiUrl: string; brand: string }) {
   const [signedIn, setSignedIn] = useState(false);
   const [me, setMe] = useState<SessionInfo | null>(null);
 
+  /* Browser credentials hydrate after the server render. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setKey(getKey());
-    // Session or key — a Google (or email) sign-in for a *returning* account only
-    // ever hands back a session; the raw key is a one-time secret shown only when
-    // the account is first created, so requiring a key here read as "signed out"
-    // for anyone who signed back in without one on this device.
+    // A session reloads the stable account key from the database into memory.
     const token = principal();
     setSignedIn(!!token);
-    if (token) api.session(token).then(setMe).catch(() => {});
+    if (token) {
+      api.session(token)
+        .then((session) => {
+          rememberKey(session.key);
+          setKey(session.key);
+          setMe(session);
+        })
+        .catch(() => {});
+    }
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const hasKey = !!key;
   const masked = key ? `${key.slice(0, 11)}${"•".repeat(20)}` : "";
@@ -53,7 +61,7 @@ export function Overview({ apiUrl, brand }: { apiUrl: string; brand: string }) {
               </div>
             ) : (
               <p className="panel-note" style={{ padding: 0 }}>
-                {signedIn ? "No key on this device." : "No key yet."} <Link href="/keys">Get a key →</Link>
+                {signedIn ? "Loading your account key…" : "No key yet."} <Link href="/keys">Get a key →</Link>
               </p>
             )}
           </div>

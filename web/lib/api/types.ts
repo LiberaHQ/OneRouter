@@ -22,10 +22,12 @@ export interface AuthMethods {
 
 export interface SessionInfo {
   account: string;
+  key: string;
   balance_usd: number;
   spent_usd: number;
   requests: number;
   identities: string[];
+  email: string | null;
   arc_address: string;
   arc_chain_id: number;
 }

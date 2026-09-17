@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getKey, setKey as saveKeyToStorage, hasKey as hasKeyStored } from "@/lib/api/tokens";
+import { getKey, setKey as saveKeyToStorage, principal } from "@/lib/api/tokens";
 import { api } from "@/lib/api/client";
 import { streamChat } from "@/lib/api/stream";
 import {
@@ -16,6 +16,7 @@ import {
 import { Sidebar } from "./Sidebar";
 import { ModelPicker } from "./ModelPicker";
 import { Mark } from "@/components/chrome/Mark";
+import { renderChatMarkdown } from "@/lib/markdown/renderChat";
 import type { ChatModel } from "./types";
 
 const SUGGESTIONS = ["Help me turn an idea into a plan", "Explain something complicated simply", "Review a piece of code"];
@@ -34,6 +35,8 @@ export function ChatApp({
   const [key, setKeyState] = useState<string | null>(null);
   const [convos, setConvos] = useState<Conversation[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
+  const [conversationOwner, setConversationOwner] = useState<string | null>(null);
+  const [conversationsLoaded, setConversationsLoaded] = useState(false);
   const [modelId, setModelId] = useState(defaultModelId);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [balance, setBalance] = useState<number | null>(null);
@@ -45,13 +48,46 @@ export function ChatApp({
   const abortRef = useRef<AbortController | null>(null);
   const logRef = useRef<HTMLDivElement | null>(null);
 
+  /* Browser-only credentials and history must hydrate after the server render. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    setKeyState(getKey());
-    setConvos(loadConversations());
+    let cancelled = false;
+    const storedKey = getKey();
+    const token = principal();
+    setKeyState(storedKey);
     setModelId(getLastModel() || defaultModelId);
-    setKeygateOpen(!hasKeyStored());
+    // A session's key loads asynchronously below — don't flash the "you need a key"
+    // gate while that's still in flight; only show it now if there's nothing at all
+    // to check (no stored key, no session).
+    setKeygateOpen(!storedKey && !token);
+    if (!token) {
+      setConversationsLoaded(true);
+      return;
+    }
+    api.session(token)
+      .then((session) => {
+        if (cancelled) return;
+        saveKeyToStorage(session.key);
+        setKeyState(session.key);
+        setKeygateOpen(!session.key);
+        const savedConversations = loadConversations(session.account);
+        setConversationOwner(session.account);
+        setConvos(savedConversations);
+        setCurrentId(savedConversations[0]?.id ?? null);
+        setConversationsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // The session/key didn't resolve — only gate if there was no fallback key.
+        setKeygateOpen(!storedKey);
+        setConversationsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!key) return;
@@ -59,8 +95,9 @@ export function ChatApp({
   }, [key]);
 
   useEffect(() => {
-    saveConversations(convos);
-  }, [convos]);
+    if (!conversationsLoaded || !conversationOwner) return;
+    saveConversations(conversationOwner, convos);
+  }, [convos, conversationOwner, conversationsLoaded]);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -92,7 +129,11 @@ export function ChatApp({
 
   function updateTurns(convoId: string, updater: (turns: ChatTurn[]) => ChatTurn[]) {
     setConvos((prev) =>
-      prev.map((c) => (c.id === convoId ? { ...c, turns: updater(c.turns), title: c.title || turns0Title(updater(c.turns)) } : c))
+      prev.map((c) => {
+        if (c.id !== convoId) return c;
+        const turns = updater(c.turns);
+        return { ...c, turns, title: c.title || turns0Title(turns) };
+      })
     );
   }
 
@@ -177,12 +218,26 @@ export function ChatApp({
     abortRef.current?.abort();
   }
 
-  function saveKey() {
+  async function saveKey() {
     const k = pastedKey.trim();
     if (!k) return;
     saveKeyToStorage(k);
     setKeyState(k);
     setKeygateOpen(false);
+    try {
+      const session = await api.session(k);
+      saveKeyToStorage(session.key);
+      setKeyState(session.key);
+      const savedConversations = loadConversations(session.account);
+      setConversationOwner(session.account);
+      setConvos(savedConversations);
+      setCurrentId(savedConversations[0]?.id ?? null);
+      setConversationsLoaded(true);
+    } catch {
+      setConversationOwner(null);
+      setConvos([]);
+      setCurrentId(null);
+    }
   }
 
   return (
@@ -215,9 +270,6 @@ export function ChatApp({
             </span>
           </button>
           <span className="spacer" />
-          <a className="btn sm" href="/signin" id="account">
-            Account
-          </a>
         </header>
 
         {pickerOpen && <ModelPicker models={models} currentId={modelId} onPick={pickModel} onClose={() => setPickerOpen(false)} />}
@@ -240,7 +292,13 @@ export function ChatApp({
             turns.map((t, i) => (
               <div className={`turn ${t.role === "user" ? "me" : t.role === "error" ? "err" : "ai"}`} key={i}>
                 <div className="who">{t.role === "user" ? "You" : t.role === "error" ? "Error" : "Assistant"}</div>
-                <div className="bubble">{t.content || (sending && i === turns.length - 1 ? "…" : "")}</div>
+                {t.role === "user" ? (
+                  <div className="bubble">{t.content}</div>
+                ) : t.content ? (
+                  <div className="bubble md" dangerouslySetInnerHTML={{ __html: renderChatMarkdown(t.content) }} />
+                ) : (
+                  <div className="bubble">{sending && i === turns.length - 1 ? "…" : ""}</div>
+                )}
                 {t.meta && (
                   <div className="meta">
                     {t.meta.provider} · {t.meta.ttft_ms}ms · ${t.meta.cost_usd?.toFixed(6)}
